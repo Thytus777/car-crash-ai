@@ -63,6 +63,17 @@ This is a **car crash damage detection and assessment AI** built with Python (Fa
 - Rate-limit image upload endpoints
 - Sanitize all user input before passing to LLM prompts
 
+## Git Workflow
+
+- **Always ask the user for approval before any git operation** (commit, push, merge, branch creation, etc.)
+- **Branching model:** Git Flow with `develop` as the integration branch
+  - All feature branches are created from `develop`
+  - Branch naming: `feature/<short-description>` (e.g., `feature/image-upload`, `feature/vehicle-identification`)
+  - Merge back into `develop` **only when the user confirms** the feature is complete and verified
+  - Never merge directly into `main` — `main` is for production releases only
+- **Commits:** Use conventional commit messages (e.g., `feat:`, `fix:`, `docs:`, `test:`)
+- **Never use `git add -A` or `git add .`** — only stage files directly related to the current task
+
 ## Key Decision Records
 
 - **Severity threshold 0.3** — Damage > 0.3 recommends replacement; ≤ 0.3 recommends repair
