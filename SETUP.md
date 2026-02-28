@@ -102,3 +102,30 @@ uvicorn app.main:app --reload
 - Service stubs: image processing, vehicle ID, damage detection, cost estimation
 - Configuration via `pydantic-settings` with `.env` support
 - Test scaffold with async client fixture
+
+### Feature: Streamlit Frontend (`feature/frontend-streamlit`)
+
+**Setup steps:**
+```bash
+# 1. Ensure backend deps are up to date (streamlit added)
+cd backend
+pip install -r requirements.txt
+
+# 2. Start the backend API (Terminal 1)
+uvicorn app.main:app --reload
+
+# 3. Start the Streamlit frontend (Terminal 2)
+cd frontend
+streamlit run streamlit_app.py
+# Opens at http://localhost:8501
+```
+
+**⚠️ Manual setup required:**
+- You need your `OPENAI_API_KEY` set in `backend/.env` for the AI analysis to work
+- You need your `SERPAPI_KEY` set in `backend/.env` for live price search (optional — falls back to static CSV)
+
+**What was created:**
+- Streamlit app with image upload, optional vehicle info override
+- Damage report with severity bars and repair/replace recommendations
+- Cost estimate breakdown with parts, labor, and grand total
+- Raw JSON report view
