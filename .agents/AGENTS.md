@@ -74,6 +74,10 @@ This is a **car crash damage detection and assessment AI** built with Python (Fa
 - **Commits:** Use conventional commit messages (e.g., `feat:`, `fix:`, `docs:`, `test:`)
 - **Never use `git add -A` or `git add .`** — only stage files directly related to the current task
 
+## Learning & Reference
+
+- **`LEARNING.md`** — Comprehensive guide to all technologies, concepts, and patterns used in this project. Covers FastAPI, Pydantic, OpenAI Vision LLM integration, prompt engineering, image processing, the live price search pipeline, async programming, testing, and AI model selection with cost comparisons. **Read this file when onboarding or when you need to understand why a technology choice was made.**
+
 ## Key Decision Records
 
 - **Severity threshold 0.3** — Damage > 0.3 recommends replacement; ≤ 0.3 recommends repair
