@@ -3,9 +3,7 @@
 import json
 import logging
 
-from openai import AsyncOpenAI
-
-from app.core.config import settings
+from app.core.llm import vision_completion
 from app.models.vehicle import Vehicle
 from app.prompts.vehicle_identification import VEHICLE_ID_PROMPT
 from app.services.image_proc import load_images_as_base64
@@ -16,7 +14,7 @@ CONFIDENCE_THRESHOLD = 0.7
 
 
 async def identify_vehicle(upload_id: str) -> Vehicle:
-    """Send uploaded images to GPT-4 Vision to identify the vehicle.
+    """Send uploaded images to a Vision LLM to identify the vehicle.
 
     Returns a Vehicle model. If confidence < 0.7, the caller should prompt
     the user for manual input.
@@ -25,27 +23,13 @@ async def identify_vehicle(upload_id: str) -> Vehicle:
     if not images_b64:
         raise ValueError(f"No images found for upload {upload_id}")
 
-    content: list[dict] = [{"type": "text", "text": VEHICLE_ID_PROMPT}]
-    for img_b64 in images_b64:
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{img_b64}",
-                    "detail": "low",
-                },
-            }
-        )
-
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": content}],
+    raw_text = await vision_completion(
+        prompt=VEHICLE_ID_PROMPT,
+        images_b64=images_b64,
         max_tokens=300,
         temperature=0.2,
+        detail="low",
     )
-
-    raw_text = response.choices[0].message.content or ""
     logger.info("Vehicle ID raw response: %s", raw_text)
 
     parsed = _parse_vehicle_response(raw_text)

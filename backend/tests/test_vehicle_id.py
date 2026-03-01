@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -50,36 +50,29 @@ def test_needs_user_input_high_confidence() -> None:
 
 
 @pytest.mark.asyncio
-async def test_identify_vehicle_calls_openai() -> None:
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(
-            message=MagicMock(
-                content=json.dumps(
-                    {
-                        "make": "Ford",
-                        "model": "Mustang",
-                        "year": 2022,
-                        "body_style": "coupe",
-                        "color": "red",
-                        "confidence": 0.95,
-                    }
-                )
-            )
-        )
-    ]
+async def test_identify_vehicle_calls_llm() -> None:
+    llm_response = json.dumps(
+        {
+            "make": "Ford",
+            "model": "Mustang",
+            "year": 2022,
+            "body_style": "coupe",
+            "color": "red",
+            "confidence": 0.95,
+        }
+    )
 
     with (
         patch(
             "app.services.vehicle_id.load_images_as_base64",
             return_value=["fake_base64"],
         ),
-        patch("app.services.vehicle_id.AsyncOpenAI") as mock_client_cls,
+        patch(
+            "app.services.vehicle_id.vision_completion",
+            new_callable=AsyncMock,
+            return_value=llm_response,
+        ),
     ):
-        mock_client = MagicMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
-
         vehicle = await identify_vehicle("test_upload_id")
 
     assert vehicle.make == "Ford"

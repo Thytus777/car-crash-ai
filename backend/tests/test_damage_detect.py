@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -91,36 +91,29 @@ def test_parse_with_code_fences() -> None:
 
 
 @pytest.mark.asyncio
-async def test_detect_damage_calls_openai() -> None:
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(
-            message=MagicMock(
-                content=json.dumps(
-                    [
-                        {
-                            "component": "rear_bumper",
-                            "damage_type": "deformation",
-                            "severity": 0.65,
-                            "description": "Rear bumper pushed in",
-                        }
-                    ]
-                )
-            )
-        )
-    ]
+async def test_detect_damage_calls_llm() -> None:
+    llm_response = json.dumps(
+        [
+            {
+                "component": "rear_bumper",
+                "damage_type": "deformation",
+                "severity": 0.65,
+                "description": "Rear bumper pushed in",
+            }
+        ]
+    )
 
     with (
         patch(
             "app.services.damage_detect.load_images_as_base64",
             return_value=["fake_b64"],
         ),
-        patch("app.services.damage_detect.AsyncOpenAI") as mock_client_cls,
+        patch(
+            "app.services.damage_detect.vision_completion",
+            new_callable=AsyncMock,
+            return_value=llm_response,
+        ),
     ):
-        mock_client = MagicMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
-
         result = await detect_damage("test_upload_id")
 
     assert len(result.damages) == 1

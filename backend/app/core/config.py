@@ -1,12 +1,17 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    ai_provider: Literal["gemini", "openai"] = "gemini"
 
     openai_api_key: str = ""
+    gemini_api_key: str = ""
+    google_ai_gemini_api_key: str = ""
     serpapi_key: str = ""
 
     labor_rate_per_hour: float = 75.00

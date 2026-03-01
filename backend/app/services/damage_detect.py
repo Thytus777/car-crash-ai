@@ -3,9 +3,8 @@
 import json
 import logging
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm import vision_completion
 from app.models.damage import STANDARD_COMPONENTS, DamageAssessment, DamageItem
 from app.prompts.damage_assessment import DAMAGE_ASSESSMENT_PROMPT
 from app.services.image_proc import load_images_as_base64
@@ -14,32 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 async def detect_damage(upload_id: str) -> DamageAssessment:
-    """Send uploaded images to GPT-4 Vision to detect and score damage."""
+    """Send uploaded images to a Vision LLM to detect and score damage."""
     images_b64 = load_images_as_base64(upload_id)
     if not images_b64:
         raise ValueError(f"No images found for upload {upload_id}")
 
-    content: list[dict] = [{"type": "text", "text": DAMAGE_ASSESSMENT_PROMPT}]
-    for img_b64 in images_b64:
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{img_b64}",
-                    "detail": "high",
-                },
-            }
-        )
-
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": content}],
+    raw_text = await vision_completion(
+        prompt=DAMAGE_ASSESSMENT_PROMPT,
+        images_b64=images_b64,
         max_tokens=2000,
         temperature=0.2,
+        detail="high",
     )
-
-    raw_text = response.choices[0].message.content or ""
     logger.info("Damage detection raw response: %s", raw_text)
 
     items = _parse_damage_response(raw_text)

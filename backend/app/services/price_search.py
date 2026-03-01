@@ -6,9 +6,9 @@ from decimal import Decimal
 
 import httpx
 import trafilatura
-from openai import AsyncOpenAI
 
 from app.core.config import settings
+from app.core.llm import text_completion
 from app.models.estimate import PriceResult
 from app.prompts.price_extraction import PRICE_EXTRACTION_PROMPT
 
@@ -113,7 +113,6 @@ async def _extract_prices(
     component: str,
 ) -> list[PriceResult]:
     """Use LLM to extract price data from each cleaned page snippet."""
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
     results: list[PriceResult] = []
 
     for domain, text in snippets:
@@ -127,14 +126,11 @@ async def _extract_prices(
         )
 
         try:
-            response = await client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
+            raw = await text_completion(
+                prompt=prompt,
                 max_tokens=200,
                 temperature=0.1,
             )
-
-            raw = response.choices[0].message.content or ""
             logger.debug("Price extraction from %s: %s", domain, raw)
 
             cleaned = raw.strip()

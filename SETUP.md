@@ -25,10 +25,16 @@ source venv/bin/activate
 ### 2. API Keys
 Create a `.env` file in `backend/` (this file is git-ignored):
 ```env
-# Required — Vision LLM for vehicle ID + damage detection + price extraction
+# AI Provider — "gemini" (default, free for dev) or "openai"
+AI_PROVIDER=gemini
+
+# Gemini API key (get free at https://aistudio.google.com/apikey)
+GEMINI_API_KEY=your-gemini-key-here
+
+# OpenAI API key (required when AI_PROVIDER=openai)
 OPENAI_API_KEY=sk-your-key-here
 
-# Required — Web search for live part prices (get free key at https://serpapi.com)
+# Web search for live part prices (get free key at https://serpapi.com)
 SERPAPI_KEY=your-serpapi-key-here
 
 # Optional — Override defaults
