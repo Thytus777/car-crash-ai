@@ -28,7 +28,7 @@ class CostEstimate(BaseModel):
     part_cost_avg: Decimal = Field(..., decimal_places=2)
     part_cost_high: Decimal = Field(..., decimal_places=2)
     price_sources: list[PriceResult] = Field(default_factory=list)
-    pricing_method: Literal["live_search", "static_reference"] = Field(
+    pricing_method: Literal["live_search", "static_reference", "ai_estimate"] = Field(
         default="static_reference"
     )
     labor_hours: Decimal = Field(..., decimal_places=2)

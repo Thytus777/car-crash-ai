@@ -129,12 +129,21 @@ async def test_estimate_cost_unknown_vehicle_uses_default() -> None:
         recommendation="replace",
     )
 
-    with patch(
-        "app.services.cost_estimate.search_part_prices",
-        new_callable=AsyncMock,
-        return_value=[],
+    with (
+        patch(
+            "app.services.cost_estimate.search_part_prices",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.cost_estimate._ai_estimate_price",
+            new_callable=AsyncMock,
+            return_value=(Decimal("800.00"), Decimal("1200.00"), Decimal("1800.00")),
+        ),
     ):
         result = await estimate_cost(vehicle, damage)
 
-    assert result.pricing_method == "static_reference"
-    assert result.part_cost_avg == Decimal("300.00")
+    assert result.pricing_method == "ai_estimate"
+    assert result.part_cost_avg == Decimal("1200.00")
+    assert result.part_cost_low == Decimal("800.00")
+    assert result.part_cost_high == Decimal("1800.00")
