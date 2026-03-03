@@ -49,7 +49,7 @@ def _parse_vehicle_response(raw_text: str) -> Vehicle:
     return Vehicle(
         make=data.get("make", "Unknown"),
         model=data.get("model", "Unknown"),
-        year=int(data.get("year", 0)),
+        year=int(data.get("year") or 0),
         body_style=data.get("body_style"),
         color=data.get("color"),
         confidence=float(data.get("confidence", 0.0)),

@@ -52,10 +52,18 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
 
         try:
             analysis_resp = httpx.post(
-                f"{API_BASE}/analyze", json=analyze_payload, timeout=120.0
+                f"{API_BASE}/analyze", json=analyze_payload, timeout=300.0
             )
+            if analysis_resp.status_code == 429:
+                detail = analysis_resp.json().get("detail", "")
+                st.error(f"⏳ AI rate limit reached: {detail}")
+                st.info("💡 Tip: Wait a few minutes and try again, or check your API key quotas at https://ai.google.dev/gemini-api/docs/rate-limits")
+                st.stop()
             analysis_resp.raise_for_status()
             report = analysis_resp.json()
+        except httpx.HTTPStatusError as e:
+            st.error(f"Analysis failed: {e}")
+            st.stop()
         except Exception as e:
             st.error(f"Analysis failed: {e}")
             st.stop()

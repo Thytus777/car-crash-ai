@@ -3,6 +3,7 @@ from decimal import Decimal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.llm import LLMRateLimitError
 from app.models.damage import DamageAssessment
 from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
@@ -42,6 +43,8 @@ async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleC
     else:
         try:
             vehicle = await identify_vehicle(request.upload_id)
+        except LLMRateLimitError as exc:
+            raise HTTPException(status_code=429, detail=str(exc))
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -60,6 +63,8 @@ async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleC
 
     try:
         damage_assessment = await detect_damage(request.upload_id)
+    except LLMRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     except Exception as exc:
         raise HTTPException(
             status_code=500,

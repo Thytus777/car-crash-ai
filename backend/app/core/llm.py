@@ -1,10 +1,55 @@
-"""LLM abstraction layer — supports Gemini and OpenAI providers."""
+"""LLM abstraction layer — supports Gemini and OpenAI providers with retry."""
 
+import asyncio
 import logging
+import re
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Gemini 2.5 is a "thinking" model — reasoning tokens count against
+# max_output_tokens. We pad the budget so visible output isn't truncated.
+_GEMINI_TOKEN_PADDING = 8000
+_GEMINI_THINKING_BUDGET = 512
+
+_MAX_RETRIES = 2
+_RETRY_BASE_DELAY = 10  # seconds
+
+
+class LLMRateLimitError(Exception):
+    """Raised when all configured LLM providers are rate-limited."""
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    return "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc) or "RateLimitError" in type(exc).__name__
+
+
+def _parse_retry_delay(exc: Exception) -> float:
+    m = re.search(r"retryDelay.*?'?(\d+\.?\d*)s'?", str(exc))
+    return float(m.group(1)) + 1 if m else _RETRY_BASE_DELAY
+
+
+async def _retry(coro_factory, label: str):
+    """Call coro_factory() up to _MAX_RETRIES times on rate-limit errors."""
+    last_exc = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return await coro_factory()
+        except Exception as exc:
+            last_exc = exc
+            if not _is_rate_limit_error(exc) or attempt == _MAX_RETRIES:
+                raise
+            delay = _parse_retry_delay(exc)
+            logger.warning(
+                "%s rate-limited (attempt %d/%d), retrying in %.0fs",
+                label, attempt + 1, _MAX_RETRIES + 1, delay,
+            )
+            await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
+# --- Public API ---
 
 
 async def vision_completion(
@@ -14,13 +59,45 @@ async def vision_completion(
     temperature: float = 0.2,
     detail: str = "high",
 ) -> str:
-    """Send a vision (text + images) request to the configured LLM provider.
+    """Send a vision request, with automatic retry and provider fallback."""
+    primary = settings.ai_provider
+    fallback = "openai" if primary == "gemini" else "gemini"
 
-    Returns the raw text response from the model.
-    """
-    if settings.ai_provider == "gemini":
-        return await _gemini_vision(prompt, images_b64, max_tokens, temperature)
-    return await _openai_vision(prompt, images_b64, max_tokens, temperature, detail)
+    # Try primary provider
+    try:
+        if primary == "gemini":
+            return await _retry(
+                lambda: _gemini_vision(prompt, images_b64, max_tokens, temperature),
+                "Gemini vision",
+            )
+        return await _retry(
+            lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, detail),
+            "OpenAI vision",
+        )
+    except Exception as primary_exc:
+        if not _is_rate_limit_error(primary_exc):
+            raise
+
+    # Fallback to other provider if it has a key
+    logger.warning("%s exhausted, falling back to %s", primary, fallback)
+    try:
+        if fallback == "gemini" and _get_gemini_key():
+            return await _retry(
+                lambda: _gemini_vision(prompt, images_b64, max_tokens, temperature),
+                "Gemini vision (fallback)",
+            )
+        elif fallback == "openai" and settings.openai_api_key:
+            return await _retry(
+                lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, detail),
+                "OpenAI vision (fallback)",
+            )
+    except Exception:
+        pass
+
+    raise LLMRateLimitError(
+        "All AI providers are rate-limited. Please wait a few minutes and try again, "
+        "or check your API key quotas."
+    )
 
 
 async def text_completion(
@@ -28,21 +105,49 @@ async def text_completion(
     max_tokens: int = 200,
     temperature: float = 0.1,
 ) -> str:
-    """Send a text-only request to the configured LLM provider.
+    """Send a text request, with automatic retry and provider fallback."""
+    primary = settings.ai_provider
+    fallback = "openai" if primary == "gemini" else "gemini"
 
-    Uses a smaller/cheaper model suitable for extraction tasks.
-    Returns the raw text response.
-    """
-    if settings.ai_provider == "gemini":
-        return await _gemini_text(prompt, max_tokens, temperature)
-    return await _openai_text(prompt, max_tokens, temperature)
+    try:
+        if primary == "gemini":
+            return await _retry(
+                lambda: _gemini_text(prompt, max_tokens, temperature),
+                "Gemini text",
+            )
+        return await _retry(
+            lambda: _openai_text(prompt, max_tokens, temperature),
+            "OpenAI text",
+        )
+    except Exception as primary_exc:
+        if not _is_rate_limit_error(primary_exc):
+            raise
+
+    logger.warning("%s exhausted, falling back to %s", primary, fallback)
+    try:
+        if fallback == "gemini" and _get_gemini_key():
+            return await _retry(
+                lambda: _gemini_text(prompt, max_tokens, temperature),
+                "Gemini text (fallback)",
+            )
+        elif fallback == "openai" and settings.openai_api_key:
+            return await _retry(
+                lambda: _openai_text(prompt, max_tokens, temperature),
+                "OpenAI text (fallback)",
+            )
+    except Exception:
+        pass
+
+    raise LLMRateLimitError(
+        "All AI providers are rate-limited. Please wait a few minutes and try again, "
+        "or check your API key quotas."
+    )
 
 
 # --- Gemini implementation ---
 
 
 def _get_gemini_key() -> str:
-    """Return the Gemini API key from whichever env var is set."""
     return settings.gemini_api_key or settings.google_ai_gemini_api_key
 
 
@@ -66,14 +171,22 @@ async def _gemini_vision(
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
         )
 
+    model_name = settings.gemini_model
+    config_kwargs: dict = {
+        "max_output_tokens": max_tokens,
+        "temperature": temperature,
+        "response_mime_type": "application/json",
+    }
+    if "2.5" in model_name:
+        config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            thinking_budget=_GEMINI_THINKING_BUDGET
+        )
+
     response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
+        model=model_name,
         contents=contents,
-        config=types.GenerateContentConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
+        config=types.GenerateContentConfig(**config_kwargs),
     )
 
     return response.text or ""
@@ -89,14 +202,22 @@ async def _gemini_text(
 
     client = genai.Client(api_key=_get_gemini_key())
 
+    model_name = settings.gemini_model
+    config_kwargs: dict = {
+        "max_output_tokens": max_tokens,
+        "temperature": temperature,
+        "response_mime_type": "application/json",
+    }
+    if "2.5" in model_name:
+        config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            thinking_budget=_GEMINI_THINKING_BUDGET
+        )
+
     response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
+        model=model_name,
         contents=prompt,
-        config=types.GenerateContentConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
+        config=types.GenerateContentConfig(**config_kwargs),
     )
 
     return response.text or ""

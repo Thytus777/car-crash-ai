@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     ai_provider: Literal["gemini", "openai"] = "gemini"
+    gemini_model: str = "gemini-2.5-flash"
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
