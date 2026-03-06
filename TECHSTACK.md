@@ -1,6 +1,143 @@
 # Technology Stack
 
-Reference document for all technologies used in the Car Crash AI project.
+Reference document for all technologies used in the Car Crash AI project, how they fit together, and how the system works end-to-end.
+
+---
+
+## How the Project Works
+
+### What this project does
+
+Car Crash AI is a web application that takes photos of a damaged vehicle and produces a full repair cost estimate. A user uploads photos, the system identifies the vehicle, detects every damaged component, looks up part prices, calculates labor costs, and returns a complete report — all powered by AI vision models.
+
+### End-to-end flow
+
+When a user clicks "Analyze Damage" in the browser, this is what happens:
+
+```
+User uploads photos
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  1. UPLOAD  (POST /api/v1/upload)       │
+│     Validate images (size, format, res) │
+│     Resize to 1024×1024, save as JPEG   │
+│     Return upload_id                    │
+└─────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  2. VEHICLE ID  (vision LLM call)       │
+│     Send photos to Gemini/OpenAI        │
+│     "What make/model/year is this car?" │
+│     Parse JSON → Vehicle model          │
+│     If confidence < 70%: ask user       │
+└─────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  3. DAMAGE DETECTION  (vision LLM call) │
+│     Send photos to Gemini/OpenAI        │
+│     "What parts are damaged? How bad?"  │
+│     Parse JSON → list of DamageItems    │
+│     Each: component, type, severity     │
+└─────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  4. COST ESTIMATION  (per component)    │
+│                                         │
+│     For each damaged component:         │
+│     ┌─ Try live price search (SerpAPI)  │
+│     │  Search Google → Fetch pages →    │
+│     │  AI extracts prices from text     │
+│     ├─ Fallback: static CSV database    │
+│     ├─ Fallback: AI price estimation    │
+│     │  "Estimate cost of a BMW hood"    │
+│     └─ Last resort: default $300        │
+│                                         │
+│     + Labor cost (hours × $75/hr rate)  │
+└─────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  5. REPORT                              │
+│     Vehicle info + damage list +        │
+│     per-component cost breakdown +      │
+│     parts total + labor total +         │
+│     grand total + disclaimer            │
+└─────────────────────────────────────────┘
+        │
+        ▼
+   User sees results in Streamlit UI
+```
+
+### The three AI calls
+
+The system makes up to three types of AI calls per analysis:
+
+| Call | Type | Input | Output | Model |
+|------|------|-------|--------|-------|
+| **Vehicle ID** | Vision | Photos + prompt | `{"make": "BMW", "model": "3 Series", "year": 2020, "confidence": 0.92}` | gemini-2.5-flash |
+| **Damage Detection** | Vision | Photos + prompt | `[{"component": "front_bumper", "severity": 0.7, ...}, ...]` | gemini-2.5-flash |
+| **Price Estimation** | Text | Vehicle + component | `{"price_low": 180, "price_avg": 280, "price_high": 450}` | gemini-2.5-flash |
+
+All three go through the same abstraction layer (`backend/app/core/llm.py`), which handles provider selection, retries, and fallback automatically.
+
+### How the API is used
+
+The backend exposes a REST API that the Streamlit frontend calls over HTTP:
+
+**Step 1 — Upload images:**
+```
+POST /api/v1/upload
+Content-Type: multipart/form-data
+Body: images[] = [photo1.jpg, photo2.jpg]
+
+Response: { "upload_id": "a1b2c3d4e5f6", "image_count": 2 }
+```
+
+**Step 2 — Run analysis:**
+```
+POST /api/v1/analyze
+Content-Type: application/json
+Body: { "upload_id": "a1b2c3d4e5f6" }
+
+Response: {
+  "vehicle": { "make": "BMW", "model": "3 Series", "year": 2020 },
+  "damage_assessment": { "damages": [...] },
+  "cost_estimates": [...],
+  "totals": { "parts_total": "860.00", "labor_total": "525.00", "grand_total": "1385.00" }
+}
+```
+
+The user can also skip AI vehicle identification by providing make/model/year in the request:
+```json
+{ "upload_id": "a1b2c3d4e5f6", "make": "BMW", "model": "3 Series", "year": 2020 }
+```
+
+### Price estimation cascade
+
+Part pricing uses a three-tier fallback to always return a result:
+
+| Priority | Method | Source | When used |
+|----------|--------|--------|-----------|
+| 1st | **Live search** | Google via SerpAPI → scrape pages → AI extracts prices | SerpAPI key set, results found |
+| 2nd | **Static CSV** | `backend/app/data/parts_prices.csv` | Vehicle/component match exists in CSV |
+| 3rd | **AI estimate** | LLM estimates based on vehicle segment | No live or static data available |
+
+The AI estimate is vehicle-aware — it knows a BMW hood costs more than a Toyota hood, and a mirror costs less than a quarter panel.
+
+### Two-process architecture
+
+The system runs as two separate processes:
+
+| Process | Port | Role |
+|---------|------|------|
+| **Backend** (FastAPI + Uvicorn) | 8000 | API server — handles uploads, AI calls, cost calculations |
+| **Frontend** (Streamlit) | 8501 | Web UI — file upload, results display, user interaction |
+
+The frontend calls the backend over HTTP (`http://localhost:8000/api/v1`). CORS middleware on the backend allows cross-origin requests from the Streamlit process.
 
 ---
 
