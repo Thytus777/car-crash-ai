@@ -8,7 +8,7 @@ Everything you need to understand about the technologies, patterns, and decision
 
 1. [Python & FastAPI Backend](#1-python--fastapi-backend)
 2. [Pydantic & Data Validation](#2-pydantic--data-validation)
-3. [OpenAI Vision LLM Integration](#3-openai-vision-llm-integration)
+3. [Vision LLM Integration (Multi-Provider)](#3-vision-llm-integration-multi-provider)
 4. [Prompt Engineering for Structured Output](#4-prompt-engineering-for-structured-output)
 5. [Image Processing with Pillow](#5-image-processing-with-pillow)
 6. [Live Price Search Pipeline](#6-live-price-search-pipeline)
@@ -98,30 +98,104 @@ This automatically reads values from the `.env` file and environment variables. 
 
 ---
 
-## 3. OpenAI Vision LLM Integration
+## 3. Vision LLM Integration (Multi-Provider)
 
 ### What is a Vision LLM?
-A "Vision Language Model" can understand both text AND images. You send it images (as base64-encoded data or URLs) along with a text prompt, and it responds with text. We use this for two tasks:
-1. **Vehicle identification** — "What make/model/year is this car?"
-2. **Damage detection** — "What parts are damaged and how severely?"
+A "Vision Language Model" can understand both text AND images. You send it images (as base64-encoded data or URLs) along with a text prompt, and it responds with text. We use this for three AI tasks:
+1. **Vehicle identification** (vision) — "What make/model/year is this car?"
+2. **Damage detection** (vision) — "What parts are damaged and how severely?"
+3. **Price estimation** (text) — "What would a replacement bumper cost for this vehicle?"
 
-### How we use it
+### The LLM abstraction layer (`backend/app/core/llm.py`)
 
-**API client** — We use OpenAI's official Python SDK with async support:
+Instead of calling AI providers directly in each service, we have a central abstraction layer. Services call two public functions — `vision_completion()` and `text_completion()` — and the layer handles provider selection, retries, and fallback automatically.
+
+```python
+from app.core.llm import vision_completion, text_completion
+
+# Vision task (vehicle ID, damage detection)
+response = await vision_completion(
+    prompt="Identify this vehicle...",
+    images_b64=["base64-encoded-image-data"],
+    max_tokens=2000,
+    temperature=0.2,
+)
+
+# Text task (price estimation, price extraction)
+response = await text_completion(
+    prompt="Estimate the price of...",
+    max_tokens=200,
+    temperature=0.1,
+)
+```
+
+**Why an abstraction layer?** Services don't need to know which AI provider is being used. Switching from Gemini to OpenAI (or adding a new provider) requires zero changes in service code.
+
+### Provider: Gemini (default)
+
+The default provider is **Gemini 2.5 Flash** via Google's `google-genai` SDK. It's free-tier-eligible, making it ideal for development.
+
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=gemini_api_key)
+
+response = await client.aio.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=[prompt, image_part],
+    config=types.GenerateContentConfig(
+        max_output_tokens=max_tokens,
+        temperature=0.2,
+        response_mime_type="application/json",  # Structured JSON output
+    ),
+)
+```
+
+**Key Gemini details:**
+- `response_mime_type="application/json"` — Tells Gemini to return valid JSON directly (no markdown fences to strip)
+- **Thinking model** — Gemini 2.5 Flash is a "thinking" model that uses internal reasoning tokens. These count against `max_output_tokens`, so we pad the budget:
+  ```python
+  _GEMINI_TOKEN_PADDING = 8000    # Extra tokens for internal reasoning
+  _GEMINI_THINKING_BUDGET = 512   # Cap on thinking tokens
+
+  config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
+  config_kwargs["thinking_config"] = types.ThinkingConfig(
+      thinking_budget=_GEMINI_THINKING_BUDGET
+  )
+  ```
+  Without this padding, the model's visible output gets truncated because reasoning tokens eat into the token limit.
+
+### Provider: OpenAI (fallback)
+
+OpenAI is used as a fallback when Gemini is rate-limited, using the `openai` SDK with `AsyncOpenAI`:
+
 ```python
 from openai import AsyncOpenAI
 
 client = AsyncOpenAI(api_key=settings.openai_api_key)
+
 response = await client.chat.completions.create(
-    model="gpt-4o",
+    model="gpt-4.1-mini",   # Vision tasks
     messages=[{"role": "user", "content": content}],
-    max_tokens=2000,
-    temperature=0.2,  # Low = more deterministic/consistent
+    max_tokens=max_tokens,
+    temperature=temperature,
 )
 ```
 
-**Sending images** — Images must be base64-encoded and wrapped in a specific format:
+OpenAI uses `gpt-4.1-mini` for vision tasks and `gpt-4.1-nano` for text-only tasks.
+
+### Sending images
+
+Images must be base64-encoded. Gemini accepts raw bytes via `types.Part.from_bytes()`, while OpenAI expects them wrapped in a specific JSON format:
+
 ```python
+# Base64 encoding (used by both providers)
+import base64
+with open(image_path, "rb") as f:
+    img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+# OpenAI format — images wrapped in content blocks:
 content = [
     {"type": "text", "text": "Identify this vehicle..."},
     {
@@ -134,21 +208,31 @@ content = [
 ]
 ```
 
-**Key parameters explained:**
+### Key parameters explained
 - `temperature` — Controls randomness. 0.0 = always pick the most likely response. 1.0 = more creative/random. We use 0.2 for consistency.
 - `max_tokens` — Limits the response length. Vehicle ID needs ~300 tokens, damage detection needs ~2000.
-- `detail` — Image resolution mode. `"low"` = cheaper, faster, good enough for vehicle ID. `"high"` = more expensive, better for spotting small damage.
+- `detail` — (OpenAI only) Image resolution mode. `"low"` = cheaper, faster. `"high"` = better for spotting small damage.
 
-**Base64 encoding** — Converting images to text that can be sent over JSON:
+### Auto-retry and provider fallback
+
+The layer automatically retries on rate limits (HTTP 429 / `RESOURCE_EXHAUSTED`):
+
 ```python
-import base64
-with open(image_path, "rb") as f:
-    img_b64 = base64.b64encode(f.read()).decode("utf-8")
+_MAX_RETRIES = 2          # Try up to 3 times total (initial + 2 retries)
+_RETRY_BASE_DELAY = 10    # Seconds between retries (or parsed from error)
 ```
 
-### Two different models for two tasks
-- **GPT-4o** — Used for vehicle ID and damage detection (needs vision + intelligence)
-- **GPT-4o-mini** — Used for price extraction from web pages (text-only, cheaper)
+**Fallback flow:**
+1. Try the primary provider (set by `AI_PROVIDER` env var, default `gemini`)
+2. If rate-limited after all retries, automatically try the other provider
+3. If both providers are exhausted, raise `LLMRateLimitError`
+
+```python
+class LLMRateLimitError(Exception):
+    """Raised when all configured LLM providers are rate-limited."""
+```
+
+This means the system stays available even when one provider hits quota limits — as long as the other provider has a valid API key configured.
 
 ---
 
@@ -289,18 +373,21 @@ clean_text = trafilatura.extract(response.text)  # Returns plain text
 ```
 Why trafilatura over BeautifulSoup? It's specifically designed for extracting the "main content" of a page, automatically removing boilerplate (headers, footers, sidebars).
 
-### Step 3: AI Price Extraction (GPT-4o-mini)
+### Step 3: AI Price Extraction (via LLM abstraction layer)
 
-We send the cleaned text to a cheaper model to extract structured price data:
+We send the cleaned text through the LLM abstraction layer's `text_completion()` to extract structured price data:
 ```python
-response = await client.chat.completions.create(
-    model="gpt-4o-mini",  # Cheaper model, text-only task
-    messages=[{"role": "user", "content": prompt}],
+from app.core.llm import text_completion
+
+raw = await text_completion(
+    prompt=prompt,       # Includes vehicle details + scraped page text
     max_tokens=200,
-    temperature=0.1,      # Very deterministic
+    temperature=0.1,     # Very deterministic
 )
 ```
 The LLM returns: `{"price": 249.99, "currency": "USD", "part_type": "aftermarket", "confidence": 0.85}`
+
+The provider (Gemini or OpenAI) is selected automatically — the price extraction code doesn't need to know which one is being used.
 
 ### Step 4: Aggregate
 
@@ -357,6 +444,35 @@ LABOR_HOURS = {
 }
 ```
 We use the average: `(min + max) / 2`
+
+### AI price estimation fallback
+
+When both the live web search AND the static CSV miss (no data for this vehicle/component), the system asks the LLM to estimate prices using `text_completion()`:
+
+```python
+from app.core.llm import text_completion
+
+prompt = PRICE_ESTIMATION_PROMPT.format(
+    year=vehicle.year,
+    make=vehicle.make,
+    model=vehicle.model,
+    component=component.replace("_", " "),
+)
+
+raw = await text_completion(prompt=prompt, max_tokens=200, temperature=0.2)
+data = json.loads(raw)
+# Returns: {"price_low": 120.00, "price_avg": 250.00, "price_high": 450.00}
+```
+
+The prompt asks the LLM to estimate low/avg/high prices based on the vehicle's market segment (economy, mid-range, luxury) and the specific component. Each estimate gets a `pricing_method` value:
+
+| Pricing method | Source | Priority |
+|---------------|--------|----------|
+| `"live_search"` | Real-time web search via SerpAPI | Tried first |
+| `"static_reference"` | Pre-built CSV database | Second fallback |
+| `"ai_estimate"` | LLM-generated price estimate | Third fallback |
+
+If even the AI estimation fails (e.g., both providers are rate-limited), the system falls back to hardcoded defaults: `$150 / $300 / $500` (low/avg/high).
 
 ### Why Decimal instead of float?
 
@@ -417,12 +533,18 @@ Our app spends most of its time *waiting* — waiting for OpenAI API responses, 
 ### How it works in our code
 
 ```python
+from app.core.llm import vision_completion
+
 # This function can "pause" at each `await` and let other work happen
 async def detect_damage(upload_id: str) -> DamageAssessment:
     images_b64 = load_images_as_base64(upload_id)  # Sync (fast, local file read)
     
-    # This pauses here while waiting for OpenAI (could take 10-30 seconds)
-    response = await client.chat.completions.create(...)
+    # This pauses here while waiting for the LLM (could take 10-30 seconds)
+    response = await vision_completion(
+        prompt=DAMAGE_PROMPT,
+        images_b64=images_b64,
+        max_tokens=2000,
+    )
     
     # Continues when the response arrives
     return parse_response(response)
@@ -451,6 +573,9 @@ async with httpx.AsyncClient(timeout=5.0) as client:
 
 Secrets are stored in `backend/.env` (git-ignored):
 ```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-key-here
+GEMINI_MODEL=gemini-2.5-flash
 OPENAI_API_KEY=sk-your-key-here
 SERPAPI_KEY=your-serpapi-key-here
 LABOR_RATE_PER_HOUR=75.00
@@ -459,9 +584,18 @@ LABOR_RATE_PER_HOUR=75.00
 **pydantic-settings** reads this automatically:
 ```python
 class Settings(BaseSettings):
-    model_config = {"env_file": ".env"}
-    openai_api_key: str = ""  # Reads OPENAI_API_KEY from .env
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    ai_provider: Literal["gemini", "openai"] = "gemini"
+    gemini_model: str = "gemini-2.5-flash"
+
+    openai_api_key: str = ""
+    gemini_api_key: str = ""
+    google_ai_gemini_api_key: str = ""  # Alternative Gemini key (Google AI Studio format)
+    serpapi_key: str = ""
 ```
+
+`ai_provider` controls which LLM is used first. `gemini_api_key` and `google_ai_gemini_api_key` are both accepted — the LLM layer checks both (useful because Google AI Studio exports the key under different env var names).
 
 ### Why this matters
 - Never hardcode API keys in source code
@@ -479,14 +613,9 @@ backend/tests/
 ├── test_health.py        # API health endpoint
 ├── test_upload.py        # Image upload endpoint
 ├── test_analysis.py      # Analysis endpoint
-├── test_estimate.py      # Cost estimation endpoint
-├── test_image_proc.py    # Image processing service
-├── test_vehicle_id.py    # Vehicle identification
-├── test_damage_detect.py # Damage detection
-├── test_cost_estimate.py # Cost estimation
-├── test_labor.py         # Labor calculations
-├── test_static_prices.py # CSV fallback lookup
-└── test_price_search.py  # Live price search
+├── test_vehicle_id.py    # Vehicle identification service
+├── test_damage_detect.py # Damage detection service
+└── test_cost_estimate.py # Cost estimation service
 ```
 
 ### Key testing concepts
@@ -501,20 +630,31 @@ async def test_detect_damage():
     assert len(result.damages) > 0
 ```
 
-**Mocking OpenAI calls** — We don't call the real API in tests:
+**Mocking the LLM abstraction layer** — We mock `vision_completion` / `text_completion` from `app.core.llm` instead of mocking SDK clients directly:
 ```python
 from unittest.mock import AsyncMock, patch
 
-@patch("app.services.vehicle_id.AsyncOpenAI")
-async def test_identify_vehicle(mock_openai_class):
-    # Set up the mock to return a fake response
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-    mock_client.chat.completions.create.return_value = fake_response
-    
-    result = await identify_vehicle("test-upload")
-    assert result.make == "Toyota"
+@pytest.mark.asyncio
+async def test_identify_vehicle():
+    llm_response = json.dumps({
+        "make": "Ford", "model": "Mustang", "year": 2022, "confidence": 0.95
+    })
+
+    with (
+        patch("app.services.vehicle_id.load_images_as_base64", return_value=["fake_base64"]),
+        patch(
+            "app.services.vehicle_id.vision_completion",
+            new_callable=AsyncMock,
+            return_value=llm_response,
+        ),
+    ):
+        vehicle = await identify_vehicle("test_upload_id")
+
+    assert vehicle.make == "Ford"
+    assert vehicle.year == 2022
 ```
+
+**Why mock at the abstraction layer?** We don't need to replicate the complex response objects of each SDK. `vision_completion()` returns a simple string, so mocking is just `return_value="some JSON"`. This also means tests don't break when we switch providers.
 
 **httpx.AsyncClient for API tests:**
 ```python
@@ -537,117 +677,56 @@ python -m pytest tests/ -v
 
 ### Current setup (what we're using)
 
-| Task | Model | Price (per 1M tokens) | Why |
-|------|-------|----------------------|-----|
-| Vehicle ID | `gpt-4o` | $2.50 input / $10.00 output | Vision + good intelligence |
-| Damage Detection | `gpt-4o` | $2.50 input / $10.00 output | Vision + high accuracy needed |
-| Price Extraction | `gpt-4o-mini` | $0.15 input / $0.60 output | Text-only, simple task |
+| Task | Model (default) | Fallback | Why |
+|------|----------------|----------|-----|
+| Vehicle ID | `gemini-2.5-flash` | `gpt-4.1-mini` | Free tier for dev, excellent vision |
+| Damage Detection | `gemini-2.5-flash` | `gpt-4.1-mini` | Same model, high accuracy via `vision_completion()` |
+| Price Estimation | `gemini-2.5-flash` | `gpt-4.1-nano` | Same model via `text_completion()` |
 
-### ⭐ Recommended upgrade: GPT-4.1 family
+**Why Gemini as default?** The free tier means $0 cost during development. Rate limits exist but the auto-fallback to OpenAI handles them transparently.
 
-The GPT-4.1 series (released April 2025) is **better AND cheaper** than GPT-4o for our use case:
+### Model options and pricing
 
-| Model | Input $/1M | Output $/1M | Vision? | Structured Output? | Best for |
-|-------|-----------|------------|---------|-------------------|----------|
-| **gpt-4.1** | $2.00 | $8.00 | ✅ | ✅ | Vehicle ID + damage detection (20% cheaper than GPT-4o, better results) |
-| **gpt-4.1-mini** | $0.40 | $1.60 | ✅ | ✅ | **Best value for our use case** — beats GPT-4o on vision benchmarks, 83% cheaper |
-| **gpt-4.1-nano** | $0.10 | $0.40 | ✅ | ✅ | Price extraction (replaces GPT-4o-mini, even cheaper) |
+#### Google Gemini
+| Model | Input $/1M | Output $/1M | Vision? | Free tier? | Notes |
+|-------|-----------|------------|---------|------------|-------|
+| **gemini-2.5-flash** | $0.30 | $2.50 | ✅ | ✅ Yes | Our default. "Thinking" model with internal reasoning |
+| gemini-2.5-flash-lite | $0.10 | $0.40 | ✅ | ✅ Yes | Cheaper, lower quality for complex vision |
 
-**Why GPT-4.1-mini is the sweet spot:**
-- Outperforms GPT-4o on MMMU (72.7% vs 68.7%) and MathVista (73.1% vs 61.4%) — key vision benchmarks
-- 83% cheaper than GPT-4o
-- 1M token context window (vs 128K for GPT-4o)
-- Better instruction following (follows our JSON schema more reliably)
-- Supports formal "Structured Outputs" mode (guaranteed valid JSON)
+#### OpenAI GPT-4.1 family
+| Model | Input $/1M | Output $/1M | Vision? | Notes |
+|-------|-----------|------------|---------|-------|
+| gpt-4.1 | $2.00 | $8.00 | ✅ | Best non-reasoning OpenAI model |
+| **gpt-4.1-mini** | $0.40 | $1.60 | ✅ | Our vision fallback. Great price/performance |
+| **gpt-4.1-nano** | $0.10 | $0.40 | ✅ | Our text fallback. Cheapest available |
 
-**Recommended configuration change:**
-```python
-# Vehicle ID + Damage Detection — change from "gpt-4o" to:
-model="gpt-4.1-mini"  # Best price/performance for vision tasks
-
-# Price Extraction — change from "gpt-4o-mini" to:
-model="gpt-4.1-nano"  # Cheapest model, handles text extraction well
-```
-
-**Cost comparison per assessment (estimated 5 damaged components):**
-
-| Config | Vehicle ID | Damage Detect | Price Extract (×5) | Total/assessment |
-|--------|-----------|--------------|-------------------|-----------------|
-| Current (GPT-4o + 4o-mini) | ~$0.04 | ~$0.08 | ~$0.005 | **~$0.13** |
-| GPT-4.1-mini + 4.1-nano | ~$0.01 | ~$0.02 | ~$0.001 | **~$0.03** |
-| **Savings** | | | | **~77%** |
-
-### Alternative providers (non-OpenAI)
-
-#### Google Gemini 2.5 Flash
-| | Price (per 1M tokens) |
-|---|---|
-| Input (text/image) | $0.30 |
-| Output | $2.50 |
-| **Free tier** | ✅ Yes (rate-limited, good for dev) |
-
-**Pros:** Free tier for development, excellent vision, supports structured output, 1M context window.
-**Cons:** Requires switching from OpenAI SDK to Google's SDK. Different prompt patterns. Less battle-tested for structured JSON output.
-
-#### Google Gemini 2.5 Flash-Lite
-| | Price (per 1M tokens) |
-|---|---|
-| Input | $0.10 |
-| Output | $0.40 |
-
-**Pros:** Extremely cheap, free tier available. Good for simple extraction tasks.
-**Cons:** Lower quality than Flash for complex vision tasks.
-
-#### Anthropic Claude Haiku 4.5
-| | Price (per 1M tokens) |
-|---|---|
-| Input | $1.00 |
-| Output | $5.00 |
-
-**Pros:** Fast, good vision capabilities, strong at following instructions.
-**Cons:** More expensive than GPT-4.1-mini. Different SDK. No free tier.
-
-#### Claude Sonnet 4.5
-| | Price (per 1M tokens) |
-|---|---|
-| Input | $3.00 |
-| Output | $15.00 |
-
-**Pros:** Excellent reasoning, strong vision, large context.
-**Cons:** Expensive for our budget-conscious use case.
-
-### 🏆 Final recommendation
-
-**For budget-conscious production use:**
-
-| Task | Model | Why |
-|------|-------|-----|
-| Vehicle ID | **gpt-4.1-mini** | Best vision quality per dollar. 83% cheaper than GPT-4o |
-| Damage Detection | **gpt-4.1-mini** | Strong vision + instruction following + structured output |
-| Price Extraction | **gpt-4.1-nano** | Cheapest available. Text extraction is a simple task |
-
-**For development/testing (zero cost):**
-
-| Task | Model | Why |
-|------|-------|-----|
-| All tasks | **Gemini 2.5 Flash (free tier)** | Free during development, switch to GPT-4.1 for production |
-
-**For maximum accuracy (if budget allows):**
-
-| Task | Model | Why |
-|------|-------|-----|
-| Vehicle ID + Damage | **gpt-4.1** | Best non-reasoning OpenAI model, 1M context |
-| Price Extraction | **gpt-4.1-nano** | Still cheap enough even at production scale |
+#### Other providers (not currently integrated)
+| Model | Input $/1M | Output $/1M | Notes |
+|-------|-----------|------------|-------|
+| Claude Haiku 4.5 | $1.00 | $5.00 | Fast, good vision. No free tier |
+| Claude Sonnet 4.5 | $3.00 | $15.00 | Excellent reasoning. Expensive for our use case |
 
 ### How to switch models
 
-The model name is a single string in each service file. To upgrade:
+No code changes needed — everything is controlled via environment variables:
 
-1. `backend/app/services/vehicle_id.py` line 42 — change `model="gpt-4o"` → `model="gpt-4.1-mini"`
-2. `backend/app/services/damage_detect.py` line 38 — change `model="gpt-4o"` → `model="gpt-4.1-mini"`
-3. `backend/app/services/price_search.py` line 131 — change `model="gpt-4o-mini"` → `model="gpt-4.1-nano"`
+```env
+# Switch the default provider (gemini or openai)
+AI_PROVIDER=gemini
 
-No other code changes needed — the OpenAI SDK and prompt format are the same.
+# Change the Gemini model
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+- `AI_PROVIDER` — Controls which provider is tried first (`gemini` or `openai`). The other becomes the fallback.
+- `GEMINI_MODEL` — Controls which Gemini model is used. The OpenAI models (`gpt-4.1-mini` for vision, `gpt-4.1-nano` for text) are hardcoded in the LLM layer since they're only used as fallbacks.
+
+**Example: switch to OpenAI as primary:**
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key-here
+```
+Gemini becomes the fallback automatically.
 
 ---
 
@@ -662,20 +741,24 @@ No other code changes needed — the OpenAI SDK and prompt format are the same.
 | **Decimal** | Python's exact decimal arithmetic type, used for money to avoid floating-point errors |
 | **Endpoint** | A specific URL path in an API (e.g., `/api/v1/upload`) |
 | **FastAPI** | Python web framework for building APIs with automatic validation and documentation |
+| **google-genai** | Google's official Python SDK for the Gemini family of AI models |
 | **httpx** | Async-capable HTTP client library for Python |
 | **JSON** | JavaScript Object Notation — the standard data format for API communication |
 | **LLM** | Large Language Model — an AI model trained on text (GPT-4, Claude, Gemini) |
 | **Middleware** | Code that runs on every request/response (e.g., CORS headers) |
 | **Mock** | A fake object used in tests to simulate external services (like OpenAI) |
+| **Provider fallback** | Automatic switch to a backup AI provider when the primary is rate-limited or unavailable |
 | **Pydantic** | Python library for data validation using type hints |
+| **Rate limiting** | API quota restrictions that cap how many requests you can make per time period (e.g., 429 errors) |
 | **REST** | Representational State Transfer — an API design pattern using HTTP methods (GET, POST, etc.) |
 | **SerpAPI** | A service that performs Google searches via API and returns structured results |
 | **Severity score** | 0.0 (no damage) to 1.0 (destroyed) — our standardized damage measurement |
 | **Streamlit** | Python framework for building web UIs with just Python code |
+| **Thinking model** | An LLM that uses internal reasoning tokens before producing visible output (e.g., Gemini 2.5 Flash) |
 | **Token** | A piece of text (~4 characters) that LLMs process. Pricing is per million tokens |
 | **trafilatura** | Python library for extracting readable text from HTML web pages |
 | **Vision LLM** | An LLM that can understand both text and images |
 
 ---
 
-*Last updated: March 2026. Prices are subject to change — check provider websites for current rates.*
+*Last updated: March 6, 2026. Prices are subject to change — check provider websites for current rates.*
