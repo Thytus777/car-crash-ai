@@ -2,23 +2,23 @@
 
 ## Overview
 
-An AI-powered system that accepts multiple images of a vehicle after an accident and produces a complete damage assessment report including vehicle identification, per-component damage severity, repair/replace recommendations, and cost estimates.
+A native iOS app built with Swift and SwiftUI that captures photos of a damaged vehicle, identifies the vehicle via AI, detects damage per component with severity scoring, and estimates repair costs — all on-device with direct API calls to cloud AI providers (no backend server required).
 
 ---
 
 ## High-Level Flow
 
 ```
-User uploads images
+User takes / selects photos (Camera + PHPicker)
         │
         ▼
 ┌─────────────────────┐
-│  Image Preprocessing │  ← validate, resize, normalize
+│  Image Preprocessing │  ← validate, resize, normalize (UIImage / CoreImage)
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
-│ Vehicle Identification│  ← AI detection OR user prompt fallback
+│ Vehicle Identification│  ← AI detection OR manual entry fallback
 │ (make, model, year)  │
 └────────┬────────────┘
          │
@@ -35,12 +35,12 @@ User uploads images
          │
          ▼
 ┌─────────────────────────┐
-│ Cost Estimation          │  ← part prices + labor estimates
+│ Cost Estimation          │  ← part prices (SerpAPI + CSV fallback) + labor
 └────────┬────────────────┘
          │
          ▼
 ┌─────────────────────────┐
-│ Report Generation        │  ← structured JSON + human-readable PDF/HTML
+│ Report View              │  ← structured on-screen report (SwiftUI)
 └─────────────────────────┘
 ```
 
@@ -48,15 +48,17 @@ User uploads images
 
 ## 1. Image Input & Preprocessing
 
-**What it does:** Accept 1–10 images of the damaged vehicle (front, rear, sides, close-ups).
+**What it does:** Accept 1–10 images of the damaged vehicle (front, rear, sides, close-ups) via the device camera or photo library.
 
 **Details:**
-- Supported formats: JPEG, PNG, HEIC (convert HEIC → JPEG on ingest)
+- **Camera capture:** `AVCaptureSession` via a custom `CameraView` (UIViewControllerRepresentable wrapping UIImagePickerController or AVFoundation)
+- **Photo library:** `PHPickerViewController` for multi-image selection
+- Supported formats: JPEG, PNG, HEIC (native iOS support — no conversion needed)
 - Validate: minimum resolution (640×480), file size limits (≤ 20 MB each)
-- Resize to a consistent resolution for the model (e.g., 1024×1024)
-- Store originals in cloud storage (S3/Azure Blob) for audit trail
+- Resize to a consistent resolution for the AI model (e.g., 1024×1024) using `CoreGraphics`
+- Convert to JPEG `Data` for API upload; strip EXIF where not needed
 
-**Tech:** Python with Pillow / OpenCV for preprocessing.
+**Tech:** `UIImage`, `CoreImage`, `CoreGraphics`, `PhotosUI` (PHPicker).
 
 ---
 
@@ -67,23 +69,23 @@ User uploads images
 **Approach — Two Paths (try AI first, fall back to user):**
 
 ### Path A — Vision AI Auto-Detection
-- Send one or more clear images to a Vision LLM (GPT-4 Vision, Claude Vision, or Gemini)
+- Send one or more clear images to a Vision LLM (Gemini or OpenAI)
 - Prompt: *"Identify the make, model, approximate year, and body style of this vehicle."*
-- Parse structured response (JSON)
+- Parse structured JSON response
 - Confidence threshold: if the model returns confidence < 0.7, fall back to Path B
 
-### Path B — User Prompt Fallback
-- Ask the user: "We couldn't confidently identify your vehicle. Please provide: Make, Model, Year"
-- Validate against a known vehicle database (NHTSA VIN decoder API is free, or use a static dataset)
+### Path B — User Manual Entry Fallback
+- Present a SwiftUI form: "We couldn't confidently identify your vehicle. Please provide: Make, Model, Year"
+- Validate against a static vehicle dataset bundled in-app
 
 **Why this matters:** Vehicle identity determines part catalog, part prices, and labor rates.
 
 **Data sources for vehicle data:**
+
 | Source | Cost | Notes |
 |--------|------|-------|
-| NHTSA VIN Decoder API | Free | Decode VIN → make/model/year |
-| CarMD API | Paid | Vehicle data + common repairs |
-| Static dataset (Kaggle) | Free | Offline reference |
+| NHTSA VIN Decoder API | Free | Decode VIN → make/model/year (URLSession call) |
+| Static dataset (bundled CSV) | Free | Offline reference, bundled in app |
 
 ---
 
@@ -92,6 +94,7 @@ User uploads images
 **What it does:** Identify which components are damaged and score severity from 0.0 (no damage) to 1.0 (destroyed).
 
 ### Components to Detect
+
 | Zone | Components |
 |------|-----------|
 | Front | Front bumper, hood, grille, headlights (L/R), fenders (L/R), windshield |
@@ -102,7 +105,7 @@ User uploads images
 
 ### Approach — Vision LLM (Chosen)
 
-Use GPT-4 Vision / Claude Vision / Gemini with structured output prompting:
+Use Google Gemini (default) or OpenAI GPT-4 Vision (fallback) with structured output prompting:
 
 ```
 Prompt: "Analyze these images of a damaged vehicle. For each damaged
@@ -118,8 +121,8 @@ Return as JSON array."
 **Cons:** API costs (~$0.01–0.05 per image), non-deterministic, needs prompt tuning.
 
 > **Future upgrade path:** Once we have enough labeled data from real assessments, train a
-> YOLOv8 model for fast damage region detection and feed those crops into the Vision LLM
-> for detailed severity scoring (hybrid approach).
+> CoreML model for fast on-device damage region detection and feed those crops into the
+> Vision LLM for detailed severity scoring (hybrid approach).
 
 ### Severity Scale & Recommendations
 
@@ -141,32 +144,24 @@ Return as JSON array."
 
 ### Part Replacement Pricing — Live Web Search Pipeline (Chosen)
 
-No single parts database covers every vehicle. Instead, we search the web in real-time,
-fetch the top results, and use AI to extract structured pricing data.
+No single parts database covers every vehicle. Instead, the app searches the web via SerpAPI,
+fetches snippets, and uses AI to extract structured pricing data — all from on-device URLSession calls.
 
-#### Architecture: Search → Fetch → Extract
+#### Architecture: Search → Extract → Aggregate
 
 ```
-Backend receives:  "Toyota Corolla 2018 front bumper"
+App sends query:  "Toyota Corolla 2018 front bumper"
         │
         ▼
 ┌──────────────────────────┐
-│ Step 1 — Search API       │  SerpAPI / Google Custom Search / Bing Search API
+│ Step 1 — Search API       │  SerpAPI via URLSession GET
 │                           │  Query: "{year} {make} {model} {component} price buy"
-│                           │  Returns: top 5 result URLs + snippets
+│                           │  Returns: top 5 result URLs + snippets (JSON)
 └──────────┬───────────────┘
            │
            ▼
 ┌──────────────────────────┐
-│ Step 2 — Fetch & Clean    │  httpx GET each result URL
-│                           │  Strip scripts/styles with BeautifulSoup or trafilatura
-│                           │  Extract: title, price-like text, product descriptions
-│                           │  Timeout: 5s per page, skip failures
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ Step 3 — AI Price Extract │  Send cleaned snippets to LLM
+│ Step 2 — AI Price Extract │  Send search snippets to Gemini / OpenAI
 │                           │  "Extract the product price, currency, and whether
 │                           │   it's OEM or aftermarket from this text."
 │                           │  Returns structured JSON per result
@@ -174,53 +169,28 @@ Backend receives:  "Toyota Corolla 2018 front bumper"
            │
            ▼
 ┌──────────────────────────┐
-│ Step 4 — Aggregate        │  Collect prices from all results
+│ Step 3 — Aggregate        │  Collect prices from all results
 │                           │  Return: { low, avg, high, currency, sources[] }
-│                           │  Cache result for 24 hours
+│                           │  Cache result in UserDefaults (24hr TTL)
 └──────────────────────────┘
 ```
 
-#### Search API Options
+#### Search API
 
 | Provider | Free Tier | Paid | Notes |
 |----------|-----------|------|-------|
-| **SerpAPI** | 100 searches/mo | $50/mo for 5,000 | Best structured results, Google/Bing |
-| **Google Custom Search API** | 100/day free | $5 per 1,000 | Requires Custom Search Engine setup |
-| **Bing Web Search API** | 1,000/mo free | Pay-as-you-go | Via Azure, good quality |
-| **SearXNG** (self-hosted) | Unlimited | Free (self-host) | Aggregates multiple engines, no API key |
+| **SerpAPI** | 100 searches/mo | $50/mo for 5,000 | Best structured results, called via URLSession |
 
 > **Recommendation:** Start with **SerpAPI** (100 free/mo is enough for development).
-> For production scale, switch to **Bing Search API** (cheapest at volume) or
-> self-host **SearXNG** for zero per-query cost.
-
-#### Page Fetching & Cleaning
-
-```python
-# Fetch with httpx (async, fast)
-async with httpx.AsyncClient(timeout=5.0) as client:
-    response = await client.get(url, follow_redirects=True)
-
-# Clean with trafilatura (best for article/product page extraction)
-import trafilatura
-clean_text = trafilatura.extract(response.text)
-
-# Or BeautifulSoup for more control
-from bs4 import BeautifulSoup
-soup = BeautifulSoup(response.text, "html.parser")
-for tag in soup(["script", "style", "nav", "footer"]):
-    tag.decompose()
-text = soup.get_text(separator="\n", strip=True)
-```
 
 #### AI Price Extraction Prompt
 
 ```
-Given the following product page text from {site_domain}, extract pricing info
-for the car part: {year} {make} {model} {component}.
+Given the following search snippets for the car part: {year} {make} {model} {component}.
 
 Text:
 ---
-{cleaned_text[:2000]}
+{snippet_text}
 ---
 
 Return ONLY valid JSON:
@@ -229,23 +199,23 @@ Return ONLY valid JSON:
   "currency": "<3-letter code, e.g. AUD, USD>",
   "part_type": "<oem | aftermarket | unknown>",
   "in_stock": <true | false | null>,
-  "product_name": "<exact product name from page>",
+  "product_name": "<exact product name from snippet>",
   "confidence": <0.0 to 1.0>
 }
 ```
 
 #### Caching & Fallback
 
-- **Cache:** Store search results + extracted prices in the database for 24 hours
+- **Cache:** Store search results + extracted prices in `UserDefaults` for 24 hours
   - Key: `{make}_{model}_{year}_{component}`
   - Avoids redundant API calls for the same vehicle/part combo
 - **Fallback:** If live search fails (API down, no results, all extractions low-confidence):
-  - Fall back to the static reference database (CSV of average prices)
+  - Fall back to the static reference CSV bundled in the app
   - Flag the estimate as "based on reference data, not live pricing"
 
 #### Static Fallback Database
 
-- File: `backend/app/data/parts_prices.csv`
+- File: `CarCrashAI/Data/parts_prices.csv`
 - Schema: `make,model,year_start,year_end,component,avg_price,currency,source,last_updated`
 - Covers top 30 vehicles × 20 common parts = 600 rows
 - Updated manually as a baseline safety net
@@ -257,7 +227,6 @@ Labor is typically estimated as: `labor_hours × hourly_rate`
 - **Labor hours:** Use flat-rate labor guides (e.g., Mitchell, ALLDATA) that define standard hours per repair operation
 - **Hourly rate:** Varies by region ($50–$150/hr in the US). Can use:
   - User-input location → regional average
-  - Bureau of Labor Statistics (BLS) data for auto body repair wages
   - Default to national average (~$75/hr) for MVP
 
 **Example estimate structure:**
@@ -294,52 +263,56 @@ Labor is typically estimated as: `labor_hours × hourly_rate`
 
 ---
 
-## 5. Tech Stack (Recommended)
+## 5. Tech Stack
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Backend API** | Python + FastAPI | Best ML/AI ecosystem, async, auto-docs |
-| **AI / Vision** | OpenAI GPT-4 Vision | Vehicle ID + damage detection + price extraction |
-| **Search API** | SerpAPI (dev) → Bing Search API (prod) | Legal web search for live part prices |
-| **HTML Parsing** | trafilatura + BeautifulSoup | Clean web pages for AI extraction |
-| **HTTP Client** | httpx (async) | Fetch search results and product pages |
-| **Database** | PostgreSQL + SQLAlchemy | Structured data, price cache, estimates |
-| **Object Storage** | AWS S3 or Azure Blob | Store uploaded images |
-| **Frontend** | Next.js (React) or Streamlit (quick MVP) | Streamlit for internal tool; Next.js for customer-facing |
-| **Task Queue** | Celery + Redis | Async image processing + price lookups |
-| **Deployment** | Docker + AWS ECS or Railway | Containerized, scalable |
+| **Platform** | iOS 17+ / Swift 5.9+ / SwiftUI | Native performance, camera access, modern declarative UI |
+| **AI — Primary** | Google Gemini (`google-generative-ai` Swift SDK) | Vehicle ID + damage detection + price extraction |
+| **AI — Fallback** | OpenAI GPT-4 Vision (URLSession REST calls) | Redundancy if Gemini is unavailable |
+| **Image Processing** | UIImage / CoreImage / CoreGraphics | Native iOS — resize, compress, format conversion |
+| **Camera** | AVFoundation / UIImagePickerController | Photo capture with flash, focus, exposure control |
+| **Photo Picker** | PHPickerViewController (PhotosUI) | Multi-image selection from photo library |
+| **Price Search** | SerpAPI via URLSession HTTP calls | Live web search for part prices |
+| **Static Data** | Bundled CSV (parts_prices.csv) | Fallback price reference, no network needed |
+| **Local Storage** | UserDefaults (cache) / SwiftData (Phase 2) | Price cache (24hr TTL), estimate history |
+| **Configuration** | Config.plist | API keys and settings (gitignored) |
+| **Testing** | XCTest / XCUITest | Unit and UI testing |
+| **Build** | Xcode 15+ | Code written on Windows (Swift files), built on Mac |
 
 ---
 
 ## 6. Project Phases
 
 ### Phase 1 — MVP (4–6 weeks)
-- [ ] Image upload endpoint (FastAPI)
-- [ ] Vehicle identification via Vision LLM
-- [ ] Damage detection via Vision LLM with structured output
+- [ ] Camera capture view (AVFoundation / UIImagePickerController)
+- [ ] Photo library picker (PHPicker, multi-image)
+- [ ] Image preprocessing (resize, compress via CoreGraphics)
+- [ ] Vehicle identification via Gemini Vision (OpenAI fallback)
+- [ ] Damage detection via Gemini Vision with structured JSON output
 - [ ] Severity scoring + repair/replace recommendations
-- [ ] Live price search pipeline (SerpAPI → fetch → AI extract)
-- [ ] Static parts price CSV as fallback
-- [ ] Simple labor cost estimation (national average rate)
-- [ ] Basic Streamlit or HTML frontend
-- [ ] JSON report output
+- [ ] Live price search pipeline (SerpAPI → AI extract via URLSession)
+- [ ] Static parts price CSV as fallback (bundled in app)
+- [ ] Simple labor cost estimation (national average $75/hr)
+- [ ] Report view in SwiftUI (scrollable damage list + cost breakdown)
+- [ ] Config.plist for API keys
 
 ### Phase 2 — Enhanced (6–8 weeks)
-- [ ] Price result caching (24hr TTL in PostgreSQL)
-- [ ] Regional labor rate adjustment
-- [ ] PDF report generation
-- [ ] User accounts + estimate history
-- [ ] Image annotation (highlight damaged areas on the image)
-- [ ] VIN decoder integration for precise vehicle identification
+- [ ] SwiftData persistence for estimate history
+- [ ] PDF report export (UIGraphicsPDFRenderer)
+- [ ] VIN barcode scanner (AVFoundation + NHTSA API decode)
+- [ ] Regional labor rate adjustment (user-selected location)
+- [ ] Image annotation (highlight damaged areas with CoreGraphics overlays)
+- [ ] Settings screen (labor rate, currency, default AI provider)
 
 ### Phase 3 — Production (8–12 weeks)
-- [ ] Custom YOLO model trained on car damage dataset
-- [ ] Hybrid approach (YOLO detection + LLM assessment)
-- [ ] Multi-language support
-- [ ] Insurance-grade reporting format
-- [ ] Admin dashboard for price database management
-- [ ] A/B testing for model accuracy improvements
-- [ ] Mobile-responsive frontend or dedicated mobile app
+- [ ] On-device CoreML model for fast damage region detection
+- [ ] Hybrid approach (CoreML detection + LLM severity assessment)
+- [ ] Apple Pay integration for premium features
+- [ ] Share sheet (UIActivityViewController for sharing reports)
+- [ ] Push notifications (estimate ready, price updates)
+- [ ] Multi-language support (String Catalogs / Localizable)
+- [ ] App Store submission + TestFlight beta
 
 ---
 
@@ -347,58 +320,53 @@ Labor is typically estimated as: `labor_hours × hourly_rate`
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| Vision LLM inaccuracy on severity | Wrong cost estimates | Calibrate with real assessor data; allow user override |
-| Part price data staleness | Incorrect quotes | Refresh prices periodically; show date of last update |
+| Vision LLM inaccuracy on severity | Wrong cost estimates | Calibrate with real assessor data; allow user override in ReportView |
+| Part price data staleness | Incorrect quotes | Refresh prices via SerpAPI; show date of last update; CSV fallback |
 | Legal liability of estimates | User relies on incorrect estimate | Add disclaimers: "Estimate only, not a quote" |
-| API cost at scale | High operating cost | Migrate to custom models in Phase 3 |
-| Poor image quality | Bad analysis | Validate image quality on upload; guide user on photo angles |
+| API cost at scale | High operating cost per user | Migrate to on-device CoreML model in Phase 3 |
+| Poor image quality from phone camera | Bad analysis | Validate image quality before upload; guide user on photo angles with overlay hints |
+| API keys exposed in app binary | Security risk | Store keys in Config.plist (gitignored); consider App Attest + server proxy for production |
+| No network connectivity | App unusable without APIs | Graceful offline fallback: static CSV prices, cached estimates via UserDefaults |
+| App Store review rejection | Delayed launch | Follow Apple Human Interface Guidelines; no private API usage |
 
 ---
 
-## 8. Directory Structure (Planned)
+## 8. Directory Structure
 
 ```
 car-crash-ai/
-├── .agents/                    # Amp agent configuration
-│   ├── AGENTS.md
-│   └── skills/
-├── backend/
-│   ├── app/
-│   │   ├── main.py             # FastAPI entry point
-│   │   ├── api/
-│   │   │   ├── routes/
-│   │   │   │   ├── upload.py   # Image upload endpoints
-│   │   │   │   ├── analysis.py # Damage analysis endpoints
-│   │   │   │   └── estimate.py # Cost estimation endpoints
-│   │   │   └── deps.py         # Shared dependencies
-│   │   ├── core/
-│   │   │   ├── config.py       # App configuration
-│   │   │   └── security.py     # API key management
-│   │   ├── models/
-│   │   │   ├── vehicle.py      # Vehicle data models
-│   │   │   ├── damage.py       # Damage assessment models
-│   │   │   └── estimate.py     # Cost estimate models
-│   │   ├── services/
-│   │   │   ├── vehicle_id.py   # Vehicle identification service
-│   │   │   ├── damage_detect.py# Damage detection service
-│   │   │   ├── cost_estimate.py# Cost estimation service
-│   │   │   └── image_proc.py   # Image preprocessing
-│   │   └── data/
-│   │       └── parts_prices.csv# Static parts price reference
-│   ├── tests/
-│   │   ├── test_upload.py
-│   │   ├── test_analysis.py
-│   │   └── test_estimate.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/                   # Next.js or Streamlit
-│   ├── ...
-├── ml/                         # ML training (Phase 3)
-│   ├── data/
-│   ├── notebooks/
-│   └── train.py
-├── docker-compose.yml
+├── CarCrashAI/
+│   ├── App/
+│   │   └── CarCrashAIApp.swift         # @main App entry point
+│   ├── Views/
+│   │   ├── HomeView.swift              # Landing screen, start new assessment
+│   │   ├── CameraView.swift            # Camera capture + PHPicker
+│   │   ├── AnalysisView.swift          # Progress view during AI analysis
+│   │   └── ReportView.swift            # Damage report + cost breakdown
+│   ├── Models/
+│   │   ├── Vehicle.swift               # Vehicle data model (make, model, year)
+│   │   ├── DamageItem.swift            # Per-component damage (severity, type)
+│   │   └── CostEstimate.swift          # Cost breakdown (parts, labor, totals)
+│   ├── Services/
+│   │   ├── AIService.swift             # AI provider abstraction (Gemini + OpenAI)
+│   │   ├── VehicleIDService.swift      # Vehicle identification pipeline
+│   │   ├── DamageDetectService.swift   # Damage detection pipeline
+│   │   ├── CostEstimateService.swift   # Cost estimation pipeline
+│   │   ├── PriceSearchService.swift    # SerpAPI search + AI price extraction
+│   │   └── ImageProcessor.swift        # Resize, compress, format conversion
+│   ├── Prompts/
+│   │   ├── VehicleIdentification.swift # Prompt templates for vehicle ID
+│   │   └── DamageAssessment.swift      # Prompt templates for damage detection
+│   ├── Data/
+│   │   └── parts_prices.csv            # Static fallback parts price reference
+│   └── Resources/
+│       └── Config.plist                # API keys (gitignored)
+├── CarCrashAITests/                    # XCTest unit tests
+├── .agents/skills/                     # Amp agent skills
 ├── PROJECT_PLAN.md
+├── TECHSTACK.md
+├── LEARNING.md
+├── SETUP.md
 └── README.md
 ```
 
@@ -406,9 +374,11 @@ car-crash-ai/
 
 ## 9. Getting Started (Next Steps)
 
-1. **Set up the Python backend** — FastAPI skeleton with image upload
-2. **Integrate a Vision LLM** — Start with OpenAI GPT-4 Vision for both vehicle ID and damage detection
-3. **Build the prompt engineering** — Iterate on prompts to get reliable structured JSON output
-4. **Create the static parts database** — Research prices for common vehicles/parts
-5. **Build a minimal frontend** — Streamlit for rapid iteration
-6. **Test with real crash images** — Validate accuracy, tune severity thresholds
+1. **Create the Xcode project skeleton** — Set up `CarCrashAI` target with SwiftUI lifecycle, folder structure, and `Config.plist`
+2. **Build CameraView** — Implement camera capture and PHPicker for multi-image selection
+3. **Integrate Google Gemini** — Add `google-generative-ai` Swift SDK via SPM; implement `AIService` with Gemini as default provider
+4. **Add OpenAI fallback** — Implement raw URLSession REST calls to OpenAI Vision API in `AIService`
+5. **Build the prompt engineering** — Iterate on prompts in `Prompts/` to get reliable structured JSON output
+6. **Create the static parts database** — Populate `parts_prices.csv` with prices for common vehicles/parts
+7. **Wire up the full pipeline** — HomeView → CameraView → AnalysisView → ReportView
+8. **Test with real crash images** — Validate accuracy on Mac via Xcode Simulator, tune severity thresholds

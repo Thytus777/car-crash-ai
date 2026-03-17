@@ -1,681 +1,891 @@
-# Car Crash AI — Learning & Concepts Guide
+# Car Crash AI — Learning & Concepts Guide (Swift/iOS)
 
-Everything you need to understand about the technologies, patterns, and decisions used in this project.
+Everything you need to understand about the technologies, patterns, and decisions used in this iOS app. If you're coming from the Python version, each section maps the Python concept to its Swift equivalent.
 
 ---
 
 ## Table of Contents
 
-1. [Python & FastAPI Backend](#1-python--fastapi-backend)
-2. [Pydantic & Data Validation](#2-pydantic--data-validation)
-3. [OpenAI Vision LLM Integration](#3-openai-vision-llm-integration)
+1. [Swift & iOS Development](#1-swift--ios-development)
+2. [Codable & Data Validation](#2-codable--data-validation)
+3. [Vision LLM Integration (Multi-Provider)](#3-vision-llm-integration-multi-provider)
 4. [Prompt Engineering for Structured Output](#4-prompt-engineering-for-structured-output)
-5. [Image Processing with Pillow](#5-image-processing-with-pillow)
+5. [Image Processing with CoreGraphics](#5-image-processing-with-coregraphics)
 6. [Live Price Search Pipeline](#6-live-price-search-pipeline)
 7. [Cost Estimation Logic](#7-cost-estimation-logic)
-8. [Streamlit Frontend](#8-streamlit-frontend)
-9. [Async Programming (asyncio)](#9-async-programming-asyncio)
-10. [Environment & Configuration](#10-environment--configuration)
-11. [Testing with pytest](#11-testing-with-pytest)
+8. [SwiftUI Frontend](#8-swiftui-frontend)
+9. [Async Programming (Swift async/await)](#9-async-programming-swift-asyncawait)
+10. [Configuration Management](#10-configuration-management)
+11. [Testing with XCTest](#11-testing-with-xctest)
 12. [AI Model Selection & Cost Guide](#12-ai-model-selection--cost-guide)
+13. [Glossary](#13-glossary)
 
 ---
 
-## 1. Python & FastAPI Backend
+## 1. Swift & iOS Development
 
-### What is FastAPI?
-FastAPI is a modern Python web framework for building APIs. It's built on top of Starlette (for async web handling) and Pydantic (for data validation). It automatically generates interactive API documentation (Swagger UI) at `/docs`.
+### Python → Swift mapping
 
-### How we use it
+| Python | Swift/iOS |
+|--------|-----------|
+| FastAPI backend server | No backend — app calls APIs directly |
+| Pydantic `BaseModel` | `Codable` structs |
+| `async def` / `await` | `async` / `await` (nearly identical syntax) |
+| Pillow (PIL) | `UIImage`, `CoreGraphics`, `CoreImage` |
+| `httpx.AsyncClient` | `URLSession` |
+| `pydantic-settings` (.env) | `Config.plist` + `Bundle.main` |
+| pytest | XCTest / Swift Testing |
+| Streamlit | SwiftUI |
+| google-genai SDK | GoogleGenerativeAI Swift SDK |
+| openai SDK | Raw `URLSession` REST calls |
 
-**Entry point** — `backend/app/main.py`:
-```python
-from fastapi import FastAPI
+### Why no backend?
 
-app = FastAPI(title="Car Crash AI", version="0.1.0")
+The Python version needed a FastAPI server because Streamlit (the frontend) can't call AI APIs directly. On iOS, the app has full network access — it calls Gemini and OpenAI APIs directly via `URLSession`. This eliminates the entire backend layer.
 
-@app.get("/health")
-async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+### App entry point — `CarCrashAI/App/CarCrashAIApp.swift`
+
+```swift
+import SwiftUI
+
+@main
+struct CarCrashAIApp: App {
+    var body: some Scene {
+        WindowGroup {
+            HomeView()
+        }
+    }
+}
 ```
 
-**Key concepts used:**
-- **Routers** — We split endpoints into separate files (`upload.py`, `analysis.py`, `estimate.py`) and mount them with `app.include_router(router, prefix="/api/v1")`
-- **CORS middleware** — Allows the Streamlit frontend (port 8501) to call the backend API (port 8000)
-- **Async handlers** — All route handlers use `async def` because our AI calls are I/O-bound (waiting on OpenAI API)
-- **Dependency injection** — FastAPI's `Depends()` for shared dependencies
-
-### Why FastAPI over Flask/Django?
-- Native async support (critical for calling external APIs like OpenAI)
-- Automatic request/response validation via Pydantic
-- Auto-generated API docs at `/docs`
-- Type hints everywhere = better IDE support and fewer bugs
+This replaces both `backend/app/main.py` (FastAPI) and `frontend/streamlit_app.py` (Streamlit) — a single entry point for the entire app.
 
 ---
 
-## 2. Pydantic & Data Validation
+## 2. Codable & Data Validation
 
-### What is Pydantic?
-Pydantic enforces type validation on Python data structures at runtime. You define a model class, and Pydantic ensures all data matches the expected types and constraints.
+### What is Codable?
+
+Swift's `Codable` protocol (combining `Encodable` + `Decodable`) lets you convert between Swift structs and JSON automatically. It replaces Pydantic's `BaseModel`.
 
 ### How we use it
 
-**Data models** — `backend/app/models/`:
+**Data models** — `CarCrashAI/Models/`:
 
-```python
-from pydantic import BaseModel, Field
+```swift
+struct Vehicle: Codable {
+    let make: String
+    let model: String
+    let year: Int
+    let bodyStyle: String?
+    let color: String?
+    let confidence: Double
 
-class Vehicle(BaseModel):
-    make: str = Field(..., description="Manufacturer (e.g. Toyota)")
-    model: str = Field(..., description="Model name (e.g. Camry)")
-    year: int = Field(..., description="Model year")
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    enum CodingKeys: String, CodingKey {
+        case make, model, year, color, confidence
+        case bodyStyle = "body_style"
+    }
+}
 ```
 
 **Key concepts:**
-- `Field(...)` — The `...` means "required" (no default value)
-- `ge=0.0, le=1.0` — Built-in validators: greater-than-or-equal and less-than-or-equal
-- `Literal["repair", "replace"]` — Restricts values to an exact set of strings
-- `Decimal` — Used for money values instead of `float` to avoid floating-point rounding errors (e.g., `0.1 + 0.2 != 0.3` with floats)
+- `CodingKeys` — Maps Swift's `camelCase` property names to the LLM's `snake_case` JSON keys
+- Optional properties (`String?`) — Equivalent to Pydantic's `Optional[str]`
+- All properties are type-safe at compile time (no runtime validation needed like Pydantic)
 
-**pydantic-settings** — `backend/app/core/config.py`:
-```python
-from pydantic_settings import BaseSettings
+**Damage model:**
 
-class Settings(BaseSettings):
-    model_config = {"env_file": ".env"}
-    openai_api_key: str = ""
-    serpapi_key: str = ""
-    labor_rate_per_hour: float = 75.00
+```swift
+struct DamageItem: Codable {
+    let component: String
+    let damageType: String
+    let severity: Double
+    let description: String
+
+    enum CodingKeys: String, CodingKey {
+        case component, severity, description
+        case damageType = "damage_type"
+    }
+}
 ```
-This automatically reads values from the `.env` file and environment variables. No manual `os.getenv()` calls needed.
 
-### Why Pydantic over plain dicts?
-- Runtime type checking catches bugs early
-- Auto-serialization to/from JSON
-- Self-documenting (field descriptions appear in API docs)
-- IDE autocomplete on `.make`, `.model`, etc.
+**Cost estimate with Decimal for money:**
+
+```swift
+import Foundation
+
+struct CostEstimate: Codable {
+    let component: String
+    let recommendation: Recommendation
+    let partCostLow: Decimal
+    let partCostAvg: Decimal
+    let partCostHigh: Decimal
+    let laborHours: Decimal
+    let laborRate: Decimal
+    let laborCost: Decimal
+    let totalEstimate: Decimal
+
+    enum Recommendation: String, Codable {
+        case repair
+        case replace
+    }
+}
+```
+
+### Why Codable over dictionaries?
+
+- Compile-time type safety (Python only catches type errors at runtime)
+- Automatic JSON serialization/deserialization
+- IDE autocomplete on all properties
+- No external dependencies (Pydantic is a third-party library; Codable is built into Swift)
 
 ---
 
-## 3. OpenAI Vision LLM Integration
+## 3. Vision LLM Integration (Multi-Provider)
 
-### What is a Vision LLM?
-A "Vision Language Model" can understand both text AND images. You send it images (as base64-encoded data or URLs) along with a text prompt, and it responds with text. We use this for two tasks:
-1. **Vehicle identification** — "What make/model/year is this car?"
-2. **Damage detection** — "What parts are damaged and how severely?"
+### The AI Service Layer (`CarCrashAI/Services/AIService.swift`)
 
-### How we use it
+Same concept as the Python `llm.py` abstraction layer. Services call two methods — `visionCompletion()` and `textCompletion()` — and the layer handles provider selection, retries, and fallback.
 
-**API client** — We use OpenAI's official Python SDK with async support:
-```python
-from openai import AsyncOpenAI
+```swift
+final class AIService {
+    static let shared = AIService()
 
-client = AsyncOpenAI(api_key=settings.openai_api_key)
-response = await client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": content}],
-    max_tokens=2000,
-    temperature=0.2,  # Low = more deterministic/consistent
+    func visionCompletion(prompt: String, images: [Data], maxTokens: Int = 2000) async throws -> String {
+        // Try primary provider, fallback to secondary
+    }
+
+    func textCompletion(prompt: String, maxTokens: Int = 500) async throws -> String {
+        // Try primary provider, fallback to secondary
+    }
+}
+```
+
+### Provider: Gemini (default)
+
+Uses the official `GoogleGenerativeAI` Swift SDK:
+
+```swift
+import GoogleGenerativeAI
+
+let model = GenerativeModel(
+    name: "gemini-2.5-flash",
+    apiKey: Config.shared.geminiAPIKey,
+    generationConfig: GenerationConfig(
+        temperature: 0.2,
+        maxOutputTokens: maxTokens + 8000,  // Padding for thinking tokens
+        responseMIMEType: "application/json"
+    )
 )
+
+// Vision call with images
+let response = try await model.generateContent(
+    prompt,
+    images.map { ModelContent.Part.data(mimetype: "image/jpeg", $0) }
+)
+
+let text = response.text ?? ""
 ```
 
-**Sending images** — Images must be base64-encoded and wrapped in a specific format:
-```python
-content = [
-    {"type": "text", "text": "Identify this vehicle..."},
-    {
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:image/jpeg;base64,{img_b64}",
-            "detail": "high",  # "low" for vehicle ID, "high" for damage
-        },
-    },
-]
+**Key details:**
+- `responseMIMEType: "application/json"` — Forces valid JSON output (same as Python)
+- Token padding (+8,000) for Gemini's thinking budget (same as Python)
+- Images are passed as `Data` objects (JPEG bytes), not base64 strings
+
+### Provider: OpenAI (fallback)
+
+No official Swift SDK — we use raw `URLSession` REST calls:
+
+```swift
+func openAIVisionCompletion(prompt: String, imagesBase64: [String], maxTokens: Int) async throws -> String {
+    var request = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(Config.shared.openAIAPIKey)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    // Build content array with text + image_url blocks
+    var content: [[String: Any]] = [
+        ["type": "text", "text": prompt]
+    ]
+    for base64 in imagesBase64 {
+        content.append([
+            "type": "image_url",
+            "image_url": [
+                "url": "data:image/jpeg;base64,\(base64)",
+                "detail": "high"
+            ]
+        ])
+    }
+
+    let body: [String: Any] = [
+        "model": "gpt-4.1-mini",
+        "messages": [["role": "user", "content": content]],
+        "max_tokens": maxTokens,
+        "temperature": 0.2
+    ]
+
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    let (data, _) = try await URLSession.shared.data(for: request)
+
+    // Parse response
+    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    // Extract choices[0].message.content
+    ...
+}
 ```
 
-**Key parameters explained:**
-- `temperature` — Controls randomness. 0.0 = always pick the most likely response. 1.0 = more creative/random. We use 0.2 for consistency.
-- `max_tokens` — Limits the response length. Vehicle ID needs ~300 tokens, damage detection needs ~2000.
-- `detail` — Image resolution mode. `"low"` = cheaper, faster, good enough for vehicle ID. `"high"` = more expensive, better for spotting small damage.
+### Auto-retry and provider fallback
 
-**Base64 encoding** — Converting images to text that can be sent over JSON:
-```python
-import base64
-with open(image_path, "rb") as f:
-    img_b64 = base64.b64encode(f.read()).decode("utf-8")
+Same logic as Python — retry up to 2 times on rate limits (HTTP 429), then fall back to the other provider:
+
+```swift
+private let maxRetries = 2
+private let retryBaseDelay: TimeInterval = 10
+
+func withRetryAndFallback<T>(
+    primary: () async throws -> T,
+    fallback: () async throws -> T
+) async throws -> T {
+    do {
+        return try await withRetry(maxRetries: maxRetries, operation: primary)
+    } catch let error as AIServiceError where error == .rateLimited {
+        return try await withRetry(maxRetries: maxRetries, operation: fallback)
+    }
+}
 ```
-
-### Two different models for two tasks
-- **GPT-4o** — Used for vehicle ID and damage detection (needs vision + intelligence)
-- **GPT-4o-mini** — Used for price extraction from web pages (text-only, cheaper)
 
 ---
 
 ## 4. Prompt Engineering for Structured Output
 
-### What is prompt engineering?
-Crafting the exact text you send to an LLM to get reliable, structured responses. This is critical because LLMs are non-deterministic — the same prompt can produce different output formats.
+### Prompt storage
 
-### Our approach — "Return ONLY valid JSON"
+Prompts are stored as static string constants in `CarCrashAI/Prompts/`:
 
-**Vehicle identification prompt** (`backend/app/prompts/vehicle_identification.py`):
-```
-Analyze the provided images of a vehicle. Return ONLY valid JSON:
-{
-  "make": "string",
-  "model": "string",
-  "year": integer,
-  "confidence": float 0.0-1.0
+```swift
+// CarCrashAI/Prompts/VehicleIdentification.swift
+enum VehiclePrompts {
+    static let identification = """
+    Analyze the provided images of a vehicle. Return ONLY valid JSON:
+    {
+      "make": "string (manufacturer, e.g. Toyota)",
+      "model": "string (e.g. Camry)",
+      "year": integer,
+      "body_style": "string (sedan, SUV, truck, coupe, hatchback, van, wagon)",
+      "color": "string",
+      "confidence": float 0.0-1.0
+    }
+    """
 }
 ```
 
-**Damage assessment prompt** (`backend/app/prompts/damage_assessment.py`):
-```
-Analyze the images. For each damaged component provide:
-- component: use ONLY names from this list: [front_bumper, rear_bumper, ...]
-- damage_type: one of [scratch, dent, crack, shatter, crush, deformation, missing]
-- severity: float 0.0 to 1.0
-Return ONLY a valid JSON array.
+```swift
+// CarCrashAI/Prompts/DamageAssessment.swift
+enum DamagePrompts {
+    static let assessment = """
+    Analyze the provided images of a damaged vehicle. For each damaged
+    component, provide:
+    - component: use ONLY names from this list: [\(Components.allNames.joined(separator: ", "))]
+    - damage_type: one of [scratch, dent, crack, shatter, crush, deformation, missing]
+    - severity: float from 0.0 to 1.0
+    - description: brief description
+
+    Return ONLY valid JSON array.
+    """
+}
 ```
 
-**Key techniques:**
-1. **Explicit format** — Show the exact JSON schema you expect
-2. **Constrained vocabulary** — "use ONLY names from this list" prevents the LLM from inventing component names
-3. **Severity scale** — Providing ranges (0.0-0.1 = cosmetic, 0.8-1.0 = destroyed) helps the LLM calibrate
-4. **"Return ONLY valid JSON"** — Prevents the LLM from wrapping output in markdown code blocks or adding explanatory text
+The prompts are **identical** to the Python versions — LLM prompts are language-agnostic.
 
-**Handling markdown code fences** — Despite asking for "ONLY JSON", LLMs sometimes wrap responses in ` ```json ... ``` `. We strip these:
-```python
-if cleaned.startswith("```"):
-    cleaned = cleaned.split("\n", 1)[1]
-    cleaned = cleaned.rsplit("```", 1)[0].strip()
-data = json.loads(cleaned)
+### Parsing LLM responses
+
+```swift
+func parseVehicle(from jsonString: String) throws -> Vehicle {
+    let data = Data(jsonString.utf8)
+    return try JSONDecoder().decode(Vehicle.self, from: data)
+}
+
+func parseDamageItems(from jsonString: String) throws -> [DamageItem] {
+    let data = Data(jsonString.utf8)
+    return try JSONDecoder().decode([DamageItem].self, from: data)
+}
 ```
 
-### Price extraction prompt
-For price extraction, we use a template with `.format()`:
-```python
-prompt = PRICE_EXTRACTION_PROMPT.format(
-    site_domain=domain,
-    year=year,
-    make=make,
-    model=model,
-    component=component,
-    cleaned_text=text,
-)
-```
-This inserts the specific vehicle/part details and the scraped web page text into the prompt.
+Swift's `JSONDecoder` + `Codable` replaces Python's `json.loads()` + Pydantic validation in a single step.
 
 ---
 
-## 5. Image Processing with Pillow
+## 5. Image Processing with CoreGraphics
 
-### What is Pillow?
-Pillow (PIL Fork) is Python's standard image processing library. We use it to validate, resize, and convert uploaded images.
+### Python Pillow → iOS equivalents
 
-### How we use it (`backend/app/services/image_proc.py`)
+| Pillow (Python) | iOS (Swift) |
+|-----------------|-------------|
+| `Image.open(path)` | `UIImage(contentsOfFile: path)` |
+| `image.resize((w, h), Image.LANCZOS)` | `UIGraphicsImageRenderer` + `draw(in: rect)` |
+| `image.convert("RGB")` | Automatic (JPEG conversion strips alpha) |
+| `image.save("out.jpg", quality=90)` | `image.jpegData(compressionQuality: 0.9)` |
+| `base64.b64encode(data)` | `data.base64EncodedString()` |
+| HEIC handling (manual) | Native — iOS reads HEIC natively |
 
-**Validation:**
-```python
-from PIL import Image
-from io import BytesIO
+### Image processing code
 
-img = Image.open(BytesIO(data))  # Load image from bytes
-img.verify()                      # Check it's a valid image (not a corrupted file)
-img = Image.open(BytesIO(data))   # Re-open (verify() exhausts the file pointer)
-width, height = img.size          # Check dimensions >= 640x480
+```swift
+import UIKit
+
+enum ImageProcessor {
+    /// Resize image to fit within maxDimension, maintaining aspect ratio
+    static func resize(_ image: UIImage, maxDimension: CGFloat = 1024) -> UIImage {
+        let size = image.size
+        guard max(size.width, size.height) > maxDimension else { return image }
+
+        let scale = maxDimension / max(size.width, size.height)
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
+    /// Convert to JPEG data and base64 encode
+    static func toBase64(_ image: UIImage, quality: CGFloat = 0.9) -> String? {
+        image.jpegData(compressionQuality: quality)?.base64EncodedString()
+    }
+
+    /// Validate image meets minimum requirements
+    static func validate(_ image: UIImage) -> Bool {
+        let size = image.size
+        return size.width >= 640 && size.height >= 480
+    }
+
+    /// Full processing pipeline: validate → resize → JPEG data
+    static func process(_ image: UIImage) -> Data? {
+        guard validate(image) else { return nil }
+        let resized = resize(image)
+        return resized.jpegData(compressionQuality: 0.9)
+    }
+}
 ```
 
-**Why verify() twice?** `img.verify()` checks the file header is valid but makes the image object unusable. So we re-open it for actual processing.
+### Camera & Photo Picker
 
-**Resizing:**
-```python
-TARGET_SIZE = (1024, 1024)
-img.thumbnail(TARGET_SIZE, Image.Resampling.LANCZOS)
-```
-- `thumbnail()` resizes proportionally (doesn't distort the aspect ratio)
-- `LANCZOS` is a high-quality downsampling filter (smooth, no pixelation)
+```swift
+import PhotosUI
 
-**RGBA → RGB conversion:**
-```python
-if img.mode == "RGBA":
-    img = img.convert("RGB")  # JPEG doesn't support transparency
+struct PhotoPicker: UIViewControllerRepresentable {
+    @Binding var selectedImages: [UIImage]
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.selectionLimit = 10  // 1-10 images
+        config.filter = .images
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+    // ...
+}
 ```
 
-**Saving as JPEG:**
-```python
-img.save(save_path, format="JPEG", quality=90)
-```
-Quality 90 = good balance between file size and image quality.
+**Advantages over Python/Pillow:**
+- HEIC support is native (no conversion library needed)
+- Camera access is built-in
+- Image rendering is hardware-accelerated via CoreGraphics
 
 ---
 
 ## 6. Live Price Search Pipeline
 
-### Architecture: Search → Fetch → Extract → Aggregate
+### Same pipeline, different HTTP client
 
-This is the most complex part of the system. We don't have a parts price database — instead, we search the web in real-time.
+The price search architecture is identical — Search → Fetch → AI Extract → Aggregate. The only difference is using `URLSession` instead of `httpx`.
 
-### Step 1: Web Search (SerpAPI)
+```swift
+enum PriceSearchService {
+    /// Step 1: Search SerpAPI
+    static func searchPrices(
+        vehicle: Vehicle,
+        component: String
+    ) async throws -> [URL] {
+        let query = "\(vehicle.year) \(vehicle.make) \(vehicle.model) \(component) price buy"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
 
-SerpAPI is a service that performs Google searches via API and returns structured results:
-```python
-async with httpx.AsyncClient(timeout=10.0) as client:
-    response = await client.get(
-        "https://serpapi.com/search.json",
-        params={
-            "q": "2020 Toyota Camry front bumper price buy",
-            "api_key": settings.serpapi_key,
-            "num": 5,
-            "engine": "google",
-        },
-    )
-```
-Returns top 5 URLs from Google results.
+        let url = URL(string: "https://serpapi.com/search.json?q=\(query)&api_key=\(Config.shared.serpAPIKey)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
 
-### Step 2: Fetch & Clean (httpx + trafilatura)
+        let results = try JSONDecoder().decode(SerpAPIResponse.self, from: data)
+        return results.organicResults.prefix(5).compactMap { URL(string: $0.link) }
+    }
 
-**httpx** — An async HTTP client (like `requests` but async-capable):
-```python
-async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
-    response = await client.get(url)
-```
+    /// Step 2: Fetch & extract text from pages
+    static func fetchPageText(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let html = String(data: data, encoding: .utf8) ?? ""
+        // Basic HTML stripping — send to AI for price extraction
+        return html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .prefix(2000)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-**trafilatura** — Extracts readable text from HTML pages, stripping scripts, ads, navigation:
-```python
-import trafilatura
-clean_text = trafilatura.extract(response.text)  # Returns plain text
-```
-Why trafilatura over BeautifulSoup? It's specifically designed for extracting the "main content" of a page, automatically removing boilerplate (headers, footers, sidebars).
-
-### Step 3: AI Price Extraction (GPT-4o-mini)
-
-We send the cleaned text to a cheaper model to extract structured price data:
-```python
-response = await client.chat.completions.create(
-    model="gpt-4o-mini",  # Cheaper model, text-only task
-    messages=[{"role": "user", "content": prompt}],
-    max_tokens=200,
-    temperature=0.1,      # Very deterministic
-)
-```
-The LLM returns: `{"price": 249.99, "currency": "USD", "part_type": "aftermarket", "confidence": 0.85}`
-
-### Step 4: Aggregate
-
-```python
-prices = [r.price for r in live_results]
-part_low = min(prices)
-part_high = max(prices)
-part_avg = sum(prices) / len(prices)
+    /// Step 3: AI price extraction (same prompt as Python)
+    static func extractPrice(from text: String, vehicle: Vehicle, component: String) async throws -> PriceResult? {
+        let prompt = """
+        Extract pricing info for: \(vehicle.year) \(vehicle.make) \(vehicle.model) \(component).
+        Text: \(String(text.prefix(2000)))
+        Return ONLY valid JSON: {"price": number, "currency": "USD", "part_type": "oem|aftermarket|unknown", "confidence": 0.0-1.0}
+        """
+        let response = try await AIService.shared.textCompletion(prompt: prompt, maxTokens: 200)
+        let data = Data(response.utf8)
+        return try? JSONDecoder().decode(PriceResult.self, from: data)
+    }
+}
 ```
 
-### Static CSV Fallback
+### No trafilatura equivalent
 
-If the live search fails (API down, no results), we fall back to a pre-built CSV:
-```python
-# backend/app/data/parts_prices.csv
-# make,model,year_start,year_end,component,avg_price,currency,source,last_updated
-```
-Loaded once into memory using Python's `csv.DictReader`, cached in a module-level variable.
+Python used `trafilatura` for clean HTML→text extraction. Swift has no equivalent library. Two approaches:
+1. **Simple regex strip** — Remove HTML tags with regex (shown above)
+2. **Send raw text to AI** — The AI is good at extracting prices from noisy text
 
-### Why this approach?
-- No single parts database covers every vehicle
-- Prices change frequently
-- Web search gives real-time, vendor-specific pricing
-- AI extraction handles the messy, inconsistent format of product pages
+We use approach #1 for initial cleaning, then #2 for price extraction. Works just as well.
 
 ---
 
 ## 7. Cost Estimation Logic
 
-### The formula
+### Same formulas, Swift types
 
-For each damaged component:
-```
-Total Cost = Part Cost + Labor Cost
-Labor Cost = Labor Hours × Hourly Rate ($75/hr default)
-```
+```swift
+import Foundation
 
-### Repair vs. Replace threshold
+enum CostEstimation {
+    static let defaultLaborRate: Decimal = 75.00
+    static let severityReplaceThreshold: Double = 0.3
 
-```python
-# Severity > 0.3 → recommend replacement
-# Severity ≤ 0.3 → recommend repair
-recommendation = "replace" if severity > 0.3 else "repair"
-```
+    /// Determine repair vs replace
+    static func recommendation(severity: Double) -> CostEstimate.Recommendation {
+        severity > severityReplaceThreshold ? .replace : .repair
+    }
 
-### Labor hours lookup
+    /// Labor hours lookup (same table as Python)
+    static func laborHours(component: String, recommendation: CostEstimate.Recommendation) -> Decimal {
+        switch (component, recommendation) {
+        case ("front_bumper", .replace): return 3.5
+        case ("front_bumper", .repair):  return 1.5
+        case ("hood", .replace):         return 2.5
+        case ("headlight_left", .replace), ("headlight_right", .replace): return 1.0
+        // ... full lookup table
+        default: return 2.0
+        }
+    }
 
-A static dictionary mapping component names to (min, max) labor hours:
-```python
-LABOR_HOURS = {
-    "front_bumper": (Decimal("3.0"), Decimal("4.0")),  # 3-4 hours
-    "headlight_left": (Decimal("0.5"), Decimal("1.5")),  # 30-90 minutes
-    "quarter_panel_left": (Decimal("6.0"), Decimal("10.0")),  # 6-10 hours
+    /// Calculate total for one component
+    static func estimate(
+        component: String,
+        severity: Double,
+        partPrice: Decimal,
+        laborRate: Decimal = defaultLaborRate
+    ) -> CostEstimate {
+        let rec = recommendation(severity: severity)
+        let hours = laborHours(component: component, recommendation: rec)
+        let labor = hours * laborRate
+        return CostEstimate(
+            component: component,
+            recommendation: rec,
+            partCostAvg: partPrice,
+            laborHours: hours,
+            laborRate: laborRate,
+            laborCost: labor,
+            totalEstimate: partPrice + labor
+        )
+    }
 }
 ```
-We use the average: `(min + max) / 2`
 
-### Why Decimal instead of float?
+### Money handling
 
-```python
-# Float:
->>> 0.1 + 0.2
-0.30000000000000004  # WRONG for money!
+- All monetary values use `Decimal` (Foundation) — same rule as Python
+- Never use `Double` for money (floating-point errors)
+- Format for display: `NumberFormatter` with `.currency` style
 
-# Decimal:
->>> Decimal("0.1") + Decimal("0.2")
-Decimal('0.3')  # CORRECT
-
-# Always quantize to 2 decimal places:
-cost = (hours * rate).quantize(Decimal("0.01"))  # $262.50, not $262.4999999
+```swift
+let formatter = NumberFormatter()
+formatter.numberStyle = .currency
+formatter.currencyCode = "USD"
+let display = formatter.string(from: estimate.totalEstimate as NSDecimalNumber)
+// "$1,234.56"
 ```
 
 ---
 
-## 8. Streamlit Frontend
+## 8. SwiftUI Frontend
 
-### What is Streamlit?
-A Python framework for building web UIs with just Python code. No HTML/CSS/JavaScript needed. Perfect for MVP/internal tools.
+### What is SwiftUI?
 
-### How we use it (`frontend/streamlit_app.py`)
+SwiftUI is Apple's declarative UI framework. You describe *what* the UI should look like, and SwiftUI handles rendering and updates automatically. It replaces Streamlit entirely.
 
-**Key Streamlit components used:**
+### View structure
 
-| Component | What it does | Our usage |
-|-----------|-------------|-----------|
-| `st.file_uploader()` | File upload widget | Upload 1-10 car photos |
-| `st.columns()` | Side-by-side layout | Display images, metrics |
-| `st.metric()` | Key-value display | Show make, model, year, costs |
-| `st.expander()` | Collapsible section | Damage details per component |
-| `st.progress()` | Progress bar | Severity visualization (0.0–1.0) |
-| `st.spinner()` | Loading indicator | "Analyzing damage..." |
-| `st.sidebar` | Side panel | Vehicle info override |
-| `st.json()` | JSON viewer | Raw report data |
+```swift
+// HomeView.swift — Main screen
+struct HomeView: View {
+    @State private var selectedImages: [UIImage] = []
+    @State private var isAnalyzing = false
+    @State private var report: AssessmentReport?
 
-**Communication with backend:**
-```python
-import httpx
+    var body: some View {
+        NavigationStack {
+            VStack {
+                // Photo picker / camera button
+                PhotoPickerButton(images: $selectedImages)
 
-# Upload images
-upload_resp = httpx.post(f"{API_BASE}/upload", files=files, timeout=30.0)
+                // Analyze button
+                Button("🔍 Analyze Damage") {
+                    Task { await analyzeDamage() }
+                }
+                .disabled(selectedImages.isEmpty || isAnalyzing)
 
-# Run analysis
-analysis_resp = httpx.post(f"{API_BASE}/analyze", json=payload, timeout=120.0)
+                // Results
+                if let report {
+                    NavigationLink("View Report") {
+                        ReportView(report: report)
+                    }
+                }
+            }
+            .navigationTitle("Car Crash AI")
+        }
+    }
+}
 ```
-The frontend is a separate process that calls the FastAPI backend via HTTP.
+
+### Key SwiftUI concepts
+
+| Concept | What it does | Python equivalent |
+|---------|-------------|-------------------|
+| `@State` | Local view state that triggers re-render on change | `st.session_state` |
+| `@Binding` | Two-way reference to a parent's `@State` | Passing state between Streamlit components |
+| `NavigationStack` | Screen navigation | Streamlit page routing |
+| `Task { }` | Run async work from synchronous context | `asyncio.create_task()` |
+| `ProgressView()` | Loading spinner | `st.spinner()` |
+| `.sheet()` | Modal overlay | `st.dialog()` |
+
+### ReportView example
+
+```swift
+struct ReportView: View {
+    let report: AssessmentReport
+
+    var body: some View {
+        List {
+            // Vehicle info
+            Section("Vehicle") {
+                LabeledContent("Make", value: report.vehicle.make)
+                LabeledContent("Model", value: report.vehicle.model)
+                LabeledContent("Year", value: "\(report.vehicle.year)")
+            }
+
+            // Damage items with severity bars
+            Section("Damage Assessment") {
+                ForEach(report.damages, id: \.component) { damage in
+                    VStack(alignment: .leading) {
+                        Text(damage.component.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.headline)
+                        ProgressView(value: damage.severity)
+                            .tint(severityColor(damage.severity))
+                        Text(damage.description)
+                            .font(.caption)
+                    }
+                }
+            }
+
+            // Cost breakdown
+            Section("Cost Estimate") {
+                ForEach(report.estimates, id: \.component) { est in
+                    HStack {
+                        Text(est.component.replacingOccurrences(of: "_", with: " ").capitalized)
+                        Spacer()
+                        Text(est.totalEstimate, format: .currency(code: "USD"))
+                    }
+                }
+                Divider()
+                HStack {
+                    Text("Grand Total").bold()
+                    Spacer()
+                    Text(report.grandTotal, format: .currency(code: "USD")).bold()
+                }
+            }
+        }
+        .navigationTitle("Damage Report")
+    }
+
+    func severityColor(_ severity: Double) -> Color {
+        switch severity {
+        case 0..<0.3: return .green
+        case 0.3..<0.6: return .yellow
+        case 0.6..<0.8: return .orange
+        default: return .red
+        }
+    }
+}
+```
 
 ---
 
-## 9. Async Programming (asyncio)
+## 9. Async Programming (Swift async/await)
 
-### Why async?
-Our app spends most of its time *waiting* — waiting for OpenAI API responses, waiting for web pages to load, waiting for SerpAPI. With synchronous code, the server would be blocked during each wait. Async allows it to handle other requests while waiting.
+### Python vs Swift async
 
-### How it works in our code
+The syntax is nearly identical:
 
+**Python:**
 ```python
-# This function can "pause" at each `await` and let other work happen
-async def detect_damage(upload_id: str) -> DamageAssessment:
-    images_b64 = load_images_as_base64(upload_id)  # Sync (fast, local file read)
-    
-    # This pauses here while waiting for OpenAI (could take 10-30 seconds)
-    response = await client.chat.completions.create(...)
-    
-    # Continues when the response arrives
-    return parse_response(response)
+async def identify_vehicle(images: list[str]) -> Vehicle:
+    response = await vision_completion(prompt=PROMPT, images_b64=images)
+    return parse_vehicle(response)
 ```
 
-**FastAPI + async** — FastAPI automatically runs `async def` handlers in an event loop:
-```python
-@router.post("/analyze")
-async def analyze_damage(request: AnalyzeRequest):
-    vehicle = await identify_vehicle(request.upload_id)  # Async call
-    damage = await detect_damage(request.upload_id)       # Async call
-    return report
+**Swift:**
+```swift
+func identifyVehicle(images: [Data]) async throws -> Vehicle {
+    let response = try await AIService.shared.visionCompletion(prompt: VehiclePrompts.identification, images: images)
+    return try parseVehicle(from: response)
+}
 ```
 
-**httpx async client:**
-```python
-async with httpx.AsyncClient(timeout=5.0) as client:
-    response = await client.get(url)  # Non-blocking HTTP request
+### Key differences
+
+| Python | Swift |
+|--------|-------|
+| `async def foo():` | `func foo() async throws {` |
+| `await bar()` | `try await bar()` |
+| `asyncio.gather(a, b)` | `async let a = ...; async let b = ...` |
+| `asyncio.sleep(n)` | `try await Task.sleep(for: .seconds(n))` |
+| `try: except:` | `do { try } catch { }` |
+
+### Concurrent AI calls
+
+```swift
+func analyzeVehicle(images: [Data]) async throws -> AssessmentReport {
+    // Run vehicle ID and damage detection concurrently
+    async let vehicle = VehicleIDService.identify(images: images)
+    async let damages = DamageDetectService.detect(images: images)
+
+    let v = try await vehicle
+    let d = try await damages
+
+    // Cost estimation depends on vehicle + damages
+    let estimates = try await CostEstimateService.estimate(vehicle: v, damages: d)
+
+    return AssessmentReport(vehicle: v, damages: d, estimates: estimates)
+}
+```
+
+### Calling async from SwiftUI
+
+```swift
+Button("Analyze") {
+    Task {
+        isAnalyzing = true
+        defer { isAnalyzing = false }
+        do {
+            report = try await analyzeVehicle(images: processedImages)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
 ```
 
 ---
 
-## 10. Environment & Configuration
+## 10. Configuration Management
 
-### .env file pattern
+### Python .env → iOS Config.plist
 
-Secrets are stored in `backend/.env` (git-ignored):
-```env
-OPENAI_API_KEY=sk-your-key-here
-SERPAPI_KEY=your-serpapi-key-here
-LABOR_RATE_PER_HOUR=75.00
-```
-
-**pydantic-settings** reads this automatically:
+**Python (pydantic-settings):**
 ```python
 class Settings(BaseSettings):
     model_config = {"env_file": ".env"}
-    openai_api_key: str = ""  # Reads OPENAI_API_KEY from .env
+    gemini_api_key: str = ""
+    ai_provider: str = "gemini"
 ```
 
-### Why this matters
-- Never hardcode API keys in source code
-- `.env` is in `.gitignore` — keys never get committed
-- Each developer has their own `.env` with their own keys
-- Easy to override in production (real environment variables take precedence)
+**Swift (Config.plist):**
+```swift
+enum Config {
+    static let shared = Config()
+
+    let geminiAPIKey: String
+    let openAIAPIKey: String
+    let serpAPIKey: String
+    let aiProvider: String
+    let laborRatePerHour: Decimal
+
+    private init() {
+        guard let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
+              let dict = NSDictionary(contentsOfFile: path) as? [String: Any] else {
+            fatalError("Config.plist not found")
+        }
+
+        geminiAPIKey = dict["GEMINI_API_KEY"] as? String ?? ""
+        openAIAPIKey = dict["OPENAI_API_KEY"] as? String ?? ""
+        serpAPIKey = dict["SERPAPI_KEY"] as? String ?? ""
+        aiProvider = dict["AI_PROVIDER"] as? String ?? "gemini"
+        laborRatePerHour = Decimal(dict["LABOR_RATE_PER_HOUR"] as? Double ?? 75.0)
+    }
+}
+```
+
+### Security
+
+- `Config.plist` is added to `.gitignore` — never committed
+- For production, use iOS Keychain for API key storage
+- A `Config.plist.example` is committed with placeholder values
 
 ---
 
-## 11. Testing with pytest
+## 11. Testing with XCTest
+
+### Python pytest → Swift XCTest
+
+| pytest (Python) | XCTest (Swift) |
+|-----------------|----------------|
+| `def test_foo():` | `func testFoo() throws { }` |
+| `@pytest.mark.asyncio` | `func testFoo() async throws { }` |
+| `assert x == y` | `XCTAssertEqual(x, y)` |
+| `with patch(...)` | `URLProtocol` subclass for network mocking |
+| `conftest.py` fixtures | `setUp()` / `tearDown()` methods |
+
+### Service test example
+
+```swift
+import XCTest
+@testable import CarCrashAI
+
+final class VehicleIDTests: XCTestCase {
+    func testParseVehicleFromJSON() throws {
+        let json = """
+        {"make": "Ford", "model": "Mustang", "year": 2022, "confidence": 0.95}
+        """
+        let vehicle = try JSONDecoder().decode(Vehicle.self, from: Data(json.utf8))
+        XCTAssertEqual(vehicle.make, "Ford")
+        XCTAssertEqual(vehicle.year, 2022)
+        XCTAssertGreaterThan(vehicle.confidence, 0.9)
+    }
+
+    func testSeverityThreshold() {
+        XCTAssertEqual(CostEstimation.recommendation(severity: 0.2), .repair)
+        XCTAssertEqual(CostEstimation.recommendation(severity: 0.5), .replace)
+        XCTAssertEqual(CostEstimation.recommendation(severity: 0.3), .repair)  // Edge: ≤ 0.3 = repair
+        XCTAssertEqual(CostEstimation.recommendation(severity: 0.31), .replace)
+    }
+}
+```
+
+### Mocking network calls
+
+```swift
+class MockURLProtocol: URLProtocol {
+    static var mockResponseData: Data?
+    static var mockStatusCode: Int = 200
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: Self.mockStatusCode,
+            httpVersion: nil, headerFields: nil
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if let data = Self.mockResponseData {
+            client?.urlProtocol(self, didLoad: data)
+        }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+```
 
 ### Test structure
+
 ```
-backend/tests/
-├── test_health.py        # API health endpoint
-├── test_upload.py        # Image upload endpoint
-├── test_analysis.py      # Analysis endpoint
-├── test_estimate.py      # Cost estimation endpoint
-├── test_image_proc.py    # Image processing service
-├── test_vehicle_id.py    # Vehicle identification
-├── test_damage_detect.py # Damage detection
-├── test_cost_estimate.py # Cost estimation
-├── test_labor.py         # Labor calculations
-├── test_static_prices.py # CSV fallback lookup
-└── test_price_search.py  # Live price search
-```
-
-### Key testing concepts
-
-**pytest-asyncio** — Tests async functions:
-```python
-import pytest
-
-@pytest.mark.asyncio
-async def test_detect_damage():
-    result = await detect_damage("test-upload-id")
-    assert len(result.damages) > 0
-```
-
-**Mocking OpenAI calls** — We don't call the real API in tests:
-```python
-from unittest.mock import AsyncMock, patch
-
-@patch("app.services.vehicle_id.AsyncOpenAI")
-async def test_identify_vehicle(mock_openai_class):
-    # Set up the mock to return a fake response
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-    mock_client.chat.completions.create.return_value = fake_response
-    
-    result = await identify_vehicle("test-upload")
-    assert result.make == "Toyota"
-```
-
-**httpx.AsyncClient for API tests:**
-```python
-from httpx import AsyncClient
-
-async with AsyncClient(app=app, base_url="http://test") as client:
-    response = await client.get("/health")
-    assert response.status_code == 200
-```
-
-### Run tests
-```bash
-cd backend
-python -m pytest tests/ -v
+CarCrashAITests/
+├── ModelTests.swift          # Codable model tests
+├── VehicleIDTests.swift      # Vehicle identification
+├── DamageDetectTests.swift   # Damage detection
+├── CostEstimateTests.swift   # Cost estimation
+├── ImageProcessorTests.swift # Image processing
+└── AIServiceTests.swift      # AI service layer (mocked network)
 ```
 
 ---
 
 ## 12. AI Model Selection & Cost Guide
 
-### Current setup (what we're using)
+### Current setup
 
-| Task | Model | Price (per 1M tokens) | Why |
-|------|-------|----------------------|-----|
-| Vehicle ID | `gpt-4o` | $2.50 input / $10.00 output | Vision + good intelligence |
-| Damage Detection | `gpt-4o` | $2.50 input / $10.00 output | Vision + high accuracy needed |
-| Price Extraction | `gpt-4o-mini` | $0.15 input / $0.60 output | Text-only, simple task |
+| Task | Model (default) | Fallback | Why |
+|------|----------------|----------|-----|
+| Vehicle ID | `gemini-2.5-flash` | `gpt-4.1-mini` | Free tier for dev, excellent vision |
+| Damage Detection | `gemini-2.5-flash` | `gpt-4.1-mini` | Same model, high accuracy |
+| Price Estimation | `gemini-2.5-flash` | `gpt-4.1-nano` | Text-only, cheapest option |
 
-### ⭐ Recommended upgrade: GPT-4.1 family
+### Google Gemini
 
-The GPT-4.1 series (released April 2025) is **better AND cheaper** than GPT-4o for our use case:
+| Model | Input $/1M | Output $/1M | Vision? | Free tier? | Notes |
+|-------|-----------|------------|---------|------------|-------|
+| **gemini-2.5-flash** | $0.30 | $2.50 | ✅ | ✅ Yes | Default. Thinking model |
+| gemini-2.5-flash-lite | $0.10 | $0.40 | ✅ | ✅ Yes | Cheaper, lower quality |
 
-| Model | Input $/1M | Output $/1M | Vision? | Structured Output? | Best for |
-|-------|-----------|------------|---------|-------------------|----------|
-| **gpt-4.1** | $2.00 | $8.00 | ✅ | ✅ | Vehicle ID + damage detection (20% cheaper than GPT-4o, better results) |
-| **gpt-4.1-mini** | $0.40 | $1.60 | ✅ | ✅ | **Best value for our use case** — beats GPT-4o on vision benchmarks, 83% cheaper |
-| **gpt-4.1-nano** | $0.10 | $0.40 | ✅ | ✅ | Price extraction (replaces GPT-4o-mini, even cheaper) |
+### OpenAI GPT-4.1 family
 
-**Why GPT-4.1-mini is the sweet spot:**
-- Outperforms GPT-4o on MMMU (72.7% vs 68.7%) and MathVista (73.1% vs 61.4%) — key vision benchmarks
-- 83% cheaper than GPT-4o
-- 1M token context window (vs 128K for GPT-4o)
-- Better instruction following (follows our JSON schema more reliably)
-- Supports formal "Structured Outputs" mode (guaranteed valid JSON)
-
-**Recommended configuration change:**
-```python
-# Vehicle ID + Damage Detection — change from "gpt-4o" to:
-model="gpt-4.1-mini"  # Best price/performance for vision tasks
-
-# Price Extraction — change from "gpt-4o-mini" to:
-model="gpt-4.1-nano"  # Cheapest model, handles text extraction well
-```
-
-**Cost comparison per assessment (estimated 5 damaged components):**
-
-| Config | Vehicle ID | Damage Detect | Price Extract (×5) | Total/assessment |
-|--------|-----------|--------------|-------------------|-----------------|
-| Current (GPT-4o + 4o-mini) | ~$0.04 | ~$0.08 | ~$0.005 | **~$0.13** |
-| GPT-4.1-mini + 4.1-nano | ~$0.01 | ~$0.02 | ~$0.001 | **~$0.03** |
-| **Savings** | | | | **~77%** |
-
-### Alternative providers (non-OpenAI)
-
-#### Google Gemini 2.5 Flash
-| | Price (per 1M tokens) |
-|---|---|
-| Input (text/image) | $0.30 |
-| Output | $2.50 |
-| **Free tier** | ✅ Yes (rate-limited, good for dev) |
-
-**Pros:** Free tier for development, excellent vision, supports structured output, 1M context window.
-**Cons:** Requires switching from OpenAI SDK to Google's SDK. Different prompt patterns. Less battle-tested for structured JSON output.
-
-#### Google Gemini 2.5 Flash-Lite
-| | Price (per 1M tokens) |
-|---|---|
-| Input | $0.10 |
-| Output | $0.40 |
-
-**Pros:** Extremely cheap, free tier available. Good for simple extraction tasks.
-**Cons:** Lower quality than Flash for complex vision tasks.
-
-#### Anthropic Claude Haiku 4.5
-| | Price (per 1M tokens) |
-|---|---|
-| Input | $1.00 |
-| Output | $5.00 |
-
-**Pros:** Fast, good vision capabilities, strong at following instructions.
-**Cons:** More expensive than GPT-4.1-mini. Different SDK. No free tier.
-
-#### Claude Sonnet 4.5
-| | Price (per 1M tokens) |
-|---|---|
-| Input | $3.00 |
-| Output | $15.00 |
-
-**Pros:** Excellent reasoning, strong vision, large context.
-**Cons:** Expensive for our budget-conscious use case.
-
-### 🏆 Final recommendation
-
-**For budget-conscious production use:**
-
-| Task | Model | Why |
-|------|-------|-----|
-| Vehicle ID | **gpt-4.1-mini** | Best vision quality per dollar. 83% cheaper than GPT-4o |
-| Damage Detection | **gpt-4.1-mini** | Strong vision + instruction following + structured output |
-| Price Extraction | **gpt-4.1-nano** | Cheapest available. Text extraction is a simple task |
-
-**For development/testing (zero cost):**
-
-| Task | Model | Why |
-|------|-------|-----|
-| All tasks | **Gemini 2.5 Flash (free tier)** | Free during development, switch to GPT-4.1 for production |
-
-**For maximum accuracy (if budget allows):**
-
-| Task | Model | Why |
-|------|-------|-----|
-| Vehicle ID + Damage | **gpt-4.1** | Best non-reasoning OpenAI model, 1M context |
-| Price Extraction | **gpt-4.1-nano** | Still cheap enough even at production scale |
+| Model | Input $/1M | Output $/1M | Vision? | Notes |
+|-------|-----------|------------|---------|-------|
+| gpt-4.1 | $2.00 | $8.00 | ✅ | Best non-reasoning |
+| **gpt-4.1-mini** | $0.40 | $1.60 | ✅ | Vision fallback |
+| **gpt-4.1-nano** | $0.10 | $0.40 | ✅ | Text fallback |
 
 ### How to switch models
 
-The model name is a single string in each service file. To upgrade:
+Change values in `Config.plist`:
+```xml
+<key>AI_PROVIDER</key>
+<string>gemini</string>  <!-- or "openai" -->
+```
 
-1. `backend/app/services/vehicle_id.py` line 42 — change `model="gpt-4o"` → `model="gpt-4.1-mini"`
-2. `backend/app/services/damage_detect.py` line 38 — change `model="gpt-4o"` → `model="gpt-4.1-mini"`
-3. `backend/app/services/price_search.py` line 131 — change `model="gpt-4o-mini"` → `model="gpt-4.1-nano"`
-
-No other code changes needed — the OpenAI SDK and prompt format are the same.
+The provider not selected as primary becomes the automatic fallback.
 
 ---
 
-## Glossary
+## 13. Glossary
 
 | Term | Definition |
 |------|-----------|
-| **API** | Application Programming Interface — a way for programs to talk to each other over HTTP |
-| **async/await** | Python's way of writing non-blocking code that can wait for I/O without freezing |
-| **Base64** | A way to encode binary data (like images) as text characters for transmission in JSON |
-| **CORS** | Cross-Origin Resource Sharing — security policy that controls which websites can call your API |
-| **Decimal** | Python's exact decimal arithmetic type, used for money to avoid floating-point errors |
-| **Endpoint** | A specific URL path in an API (e.g., `/api/v1/upload`) |
-| **FastAPI** | Python web framework for building APIs with automatic validation and documentation |
-| **httpx** | Async-capable HTTP client library for Python |
-| **JSON** | JavaScript Object Notation — the standard data format for API communication |
-| **LLM** | Large Language Model — an AI model trained on text (GPT-4, Claude, Gemini) |
-| **Middleware** | Code that runs on every request/response (e.g., CORS headers) |
-| **Mock** | A fake object used in tests to simulate external services (like OpenAI) |
-| **Pydantic** | Python library for data validation using type hints |
-| **REST** | Representational State Transfer — an API design pattern using HTTP methods (GET, POST, etc.) |
-| **SerpAPI** | A service that performs Google searches via API and returns structured results |
-| **Severity score** | 0.0 (no damage) to 1.0 (destroyed) — our standardized damage measurement |
-| **Streamlit** | Python framework for building web UIs with just Python code |
-| **Token** | A piece of text (~4 characters) that LLMs process. Pricing is per million tokens |
-| **trafilatura** | Python library for extracting readable text from HTML web pages |
-| **Vision LLM** | An LLM that can understand both text and images |
+| **async/await** | Swift's built-in concurrency for non-blocking I/O |
+| **Codable** | Swift protocol for automatic JSON encoding/decoding |
+| **Config.plist** | Property list file for app configuration (API keys, settings) |
+| **CoreGraphics** | Apple's low-level 2D drawing framework (image resize, render) |
+| **CoreImage** | Apple's image processing framework (filters, analysis) |
+| **Decimal** | Foundation type for exact decimal arithmetic (money) |
+| **GenerativeModel** | GoogleGenerativeAI SDK class for calling Gemini models |
+| **HEIC** | High Efficiency Image Container — iOS's default photo format |
+| **Keychain** | iOS secure storage for credentials (production API keys) |
+| **NavigationStack** | SwiftUI container for push/pop screen navigation |
+| **PHPicker** | iOS system photo picker (replaces manual gallery access) |
+| **SPM** | Swift Package Manager — dependency management (like pip) |
+| **SwiftData** | Apple's persistence framework (like SQLAlchemy for iOS) |
+| **SwiftUI** | Apple's declarative UI framework |
+| **Task** | Swift concurrency primitive for launching async work |
+| **UIImage** | UIKit class representing an image in memory |
+| **URLProtocol** | Foundation class for intercepting/mocking network requests in tests |
+| **URLSession** | Foundation class for HTTP networking (like httpx) |
+| **XCTest** | Apple's testing framework (like pytest) |
 
 ---
 
-*Last updated: March 2026. Prices are subject to change — check provider websites for current rates.*
+*Last updated: March 17, 2026. AI model prices are subject to change — check provider websites for current rates.*

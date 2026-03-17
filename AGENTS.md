@@ -1,5 +1,7 @@
 # Agent Instructions
 
+This is a **Swift/SwiftUI iOS app** (iOS 17+ / Swift 5.9+). See `.agents/AGENTS.md` for full project instructions, architecture, code conventions, and file structure rules.
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
