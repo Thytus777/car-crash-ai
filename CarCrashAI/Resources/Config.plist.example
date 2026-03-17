@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>GEMINI_API_KEY</key>
+    <string>your-gemini-key-here</string>
+    <key>OPENAI_API_KEY</key>
+    <string></string>
+    <key>SERPAPI_KEY</key>
+    <string></string>
+    <key>AI_PROVIDER</key>
+    <string>gemini</string>
+    <key>LABOR_RATE_PER_HOUR</key>
+    <real>75.0</real>
+    <key>SEVERITY_REPLACE_THRESHOLD</key>
+    <real>0.3</real>
+</dict>
+</plist>
