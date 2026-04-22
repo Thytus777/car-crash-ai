@@ -27,53 +27,88 @@ class VehicleConfirmNeeded(BaseModel):
     message: str
 
 
+# --- Step 1: Vehicle Identification ---
+
+
+class IdentifyRequest(BaseModel):
+    upload_id: str
+    make: str | None = None
+    model: str | None = None
+    year: int | None = None
+
+
 @router.post(
-    "/analyze",
-    response_model=AssessmentReport | VehicleConfirmNeeded,
-    summary="Run full damage analysis on uploaded images",
+    "/identify-vehicle",
+    response_model=Vehicle | VehicleConfirmNeeded,
+    summary="Step 1: Identify the vehicle from uploaded images",
 )
-async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleConfirmNeeded:
+async def identify_vehicle_endpoint(request: IdentifyRequest) -> Vehicle | VehicleConfirmNeeded:
     if request.make and request.model and request.year:
-        vehicle = Vehicle(
+        return Vehicle(
             make=request.make,
             model=request.model,
             year=request.year,
             confidence=1.0,
         )
-    else:
-        try:
-            vehicle = await identify_vehicle(request.upload_id)
-        except LLMRateLimitError as exc:
-            raise HTTPException(status_code=429, detail=str(exc))
-        except Exception as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Vehicle identification failed: {exc}",
-            )
-
-        if needs_user_input(vehicle):
-            return VehicleConfirmNeeded(
-                vehicle_guess=vehicle,
-                message=(
-                    f"Low confidence ({vehicle.confidence:.0%}) identifying vehicle as "
-                    f"{vehicle.year} {vehicle.make} {vehicle.model}. "
-                    "Please confirm or provide correct make, model, and year."
-                ),
-            )
 
     try:
-        damage_assessment = await detect_damage(request.upload_id)
+        vehicle = await identify_vehicle(request.upload_id)
     except LLMRateLimitError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Damage detection failed: {exc}",
+        raise HTTPException(status_code=500, detail=f"Vehicle identification failed: {exc}")
+
+    if needs_user_input(vehicle):
+        return VehicleConfirmNeeded(
+            vehicle_guess=vehicle,
+            message=(
+                f"Low confidence ({vehicle.confidence:.0%}) identifying vehicle as "
+                f"{vehicle.year} {vehicle.make} {vehicle.model}. "
+                "Please confirm or provide correct make, model, and year."
+            ),
         )
 
+    return vehicle
+
+
+# --- Step 2: Damage Detection ---
+
+
+class DetectDamageRequest(BaseModel):
+    upload_id: str
+
+
+@router.post(
+    "/detect-damage",
+    response_model=DamageAssessment,
+    summary="Step 2: Detect damage from uploaded images",
+)
+async def detect_damage_endpoint(request: DetectDamageRequest) -> DamageAssessment:
+    try:
+        return await detect_damage(request.upload_id)
+    except LLMRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Damage detection failed: {exc}")
+
+
+# --- Step 3: Cost Estimation ---
+
+
+class EstimateCostsRequest(BaseModel):
+    vehicle: Vehicle
+    damage_assessment: DamageAssessment
+
+
+@router.post(
+    "/estimate-costs",
+    response_model=AssessmentReport,
+    summary="Step 3: Estimate repair costs for detected damage",
+)
+async def estimate_costs_endpoint(request: EstimateCostsRequest) -> AssessmentReport:
     cost_estimates: list[CostEstimate] = []
-    for damage_item in damage_assessment.damages:
-        cost = await estimate_cost(vehicle, damage_item)
+    for damage_item in request.damage_assessment.damages:
+        cost = await estimate_cost(request.vehicle, damage_item)
         cost_estimates.append(cost)
 
     parts_total = sum(
@@ -85,12 +120,42 @@ async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleC
     grand_total = (parts_total + labor_total).quantize(Decimal("0.01"))
 
     return AssessmentReport(
-        vehicle=vehicle,
-        damage_assessment=damage_assessment,
+        vehicle=request.vehicle,
+        damage_assessment=request.damage_assessment,
         cost_estimates=cost_estimates,
         totals=ReportTotals(
             parts_total=parts_total,
             labor_total=labor_total,
             grand_total=grand_total,
         ),
+    )
+
+
+# --- Legacy: Full pipeline in one call ---
+
+
+@router.post(
+    "/analyze",
+    response_model=AssessmentReport | VehicleConfirmNeeded,
+    summary="Run full damage analysis on uploaded images",
+)
+async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleConfirmNeeded:
+    vehicle_result = await identify_vehicle_endpoint(
+        IdentifyRequest(
+            upload_id=request.upload_id,
+            make=request.make,
+            model=request.model,
+            year=request.year,
+        )
+    )
+
+    if isinstance(vehicle_result, VehicleConfirmNeeded):
+        return vehicle_result
+
+    damage_assessment = await detect_damage_endpoint(
+        DetectDamageRequest(upload_id=request.upload_id)
+    )
+
+    return await estimate_costs_endpoint(
+        EstimateCostsRequest(vehicle=vehicle_result, damage_assessment=damage_assessment)
     )
