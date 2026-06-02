@@ -4,6 +4,80 @@ This is a **Swift/SwiftUI iOS app** (iOS 17+ / Swift 5.9+). See `.agents/AGENTS.
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+---
+
+## Git Branching Strategy
+
+**Permanent branches:**
+- `main` — production-ready code only. Never commit directly. Merge from `develop` when a release is ready.
+- `develop` — integration branch. All feature branches merge here. Always deployable but not necessarily production-ready.
+
+**Feature branches:**
+- Branch off `develop`: `git checkout -b feature/<short-name> develop`
+- One branch per feature/fix. Keep them small and focused.
+- Name format: `feature/<topic>` (e.g. `feature/phase1-database`, `feature/vin-decoder`)
+- Merge back to `develop` via PR (or locally) when the feature is complete and tests pass.
+- Delete the branch after merging.
+
+**Hotfix branches:**
+- Branch off `main`: `git checkout -b hotfix/<description> main`
+- Merge into both `main` AND `develop` after fix.
+
+**Commit message format:**
+```
+<type>: <short description>
+
+Types: feat | fix | refactor | test | docs | chore | perf
+Examples:
+  feat: add zone-based damage detection prompts
+  fix: clamp severity scores from consensus outliers
+  docs: update TECHSTACK with database layer
+```
+
+**Release flow:**
+```
+feature/* → develop → (staging test) → main
+```
+
+---
+
+## Issue Tracking (beads)
+
+This project uses **bd (beads)** for issue tracking. Install it first:
+```bash
+pip install beads   # or: check https://github.com/steveyegge/beads for install
+bd onboard
+```
+Until installed, use the Claude Code task list (`TaskCreate`) as a session-local proxy.
+
+---
+
+## Skill Invocation Guide
+
+Use the ECC skills installed at `~/.claude/skills/ecc/` for the task types below. Invoke a skill when the work clearly falls into its domain — don't invoke speculatively.
+
+| Task | Skill(s) to invoke |
+|------|-------------------|
+| Writing or refactoring FastAPI routes, services, models | `backend-patterns`, `coding-standards` |
+| Designing new API endpoints or reviewing existing ones | `api-design` |
+| Writing or expanding the test suite | `e2e-testing` |
+| Docker, containerization, or compose changes | `docker-patterns` |
+| Deployment config, CI/CD, Railway/ECS/Fly setup | `deployment-patterns` |
+| Changes to the LLM call pipeline (`core/llm.py`, prompts) | `cost-aware-llm-pipeline`, `cost-tracking` |
+| Adding PostgreSQL, SQLAlchemy, or schema migrations | `database-migrations` |
+| Web scraping pipeline (`price_search.py`, trafilatura) | `data-scraper-agent` |
+| Research tasks (market research, API comparison, pricing) | `deep-research` |
+| Security audit or adding auth/rate-limiting | invoke `/security-review` |
+
+### How to invoke a skill
+
+At the top of your response when working in a skill domain, state:
+> "Invoking skill: `<skill-name>`"
+
+Then follow the guidance from that skill's `SKILL.md` for the duration of that task.
+
+---
+
 ## Quick Reference
 
 ```bash
