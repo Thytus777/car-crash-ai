@@ -1,9 +1,15 @@
+import logging
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.llm import LLMRateLimitError
+from app.db.models import EstimateRecord
+from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 from app.models.damage import DamageAssessment
 from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
@@ -38,7 +44,10 @@ class VehicleConfirmNeeded(BaseModel):
     response_model=AssessmentReport | VehicleConfirmNeeded,
     summary="Run full damage analysis on uploaded images",
 )
-async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleConfirmNeeded:
+async def analyze_damage(
+    request: AnalyzeRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AssessmentReport | VehicleConfirmNeeded:
     # --- Vehicle identification ---
     if request.make and request.model and request.year:
         vehicle = Vehicle(
@@ -124,5 +133,25 @@ async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleC
 
     # --- Sanity check (second-pass LLM review) ---
     report.assessment_warnings = await run_sanity_check(report)
+
+    # --- Persist to database ---
+    try:
+        record = EstimateRecord(
+            upload_id=request.upload_id,
+            vehicle_make=vehicle.make,
+            vehicle_model=vehicle.model,
+            vehicle_year=vehicle.year,
+            vehicle_vin=request.vin,
+            vehicle_confidence=vehicle.confidence,
+            parts_total=float(parts_total),
+            labor_total=float(labor_total),
+            grand_total=float(grand_total),
+            report_json=report.model_dump_json(),
+        )
+        db.add(record)
+        await db.flush()
+        logger.info("Saved estimate id=%d for upload=%s", record.id, request.upload_id)
+    except Exception:
+        logger.exception("Failed to persist estimate — returning result anyway")
 
     return report

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analysis, estimate, upload
+from app.api.routes import analysis, estimate, estimates, upload
 from app.core.config import settings
 
 app = FastAPI(
@@ -21,6 +21,7 @@ app.add_middleware(
 app.include_router(upload.router, prefix="/api/v1", tags=["upload"])
 app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
 app.include_router(estimate.router, prefix="/api/v1", tags=["estimate"])
+app.include_router(estimates.router, prefix="/api/v1", tags=["history"])
 
 
 @app.get("/health")

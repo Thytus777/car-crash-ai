@@ -27,5 +27,8 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["*"]
 
+    # PostgreSQL — asyncpg driver
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/carcrash"
+
 
 settings = Settings()

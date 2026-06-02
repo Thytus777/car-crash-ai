@@ -11,3 +11,14 @@ trafilatura>=2.0.0
 beautifulsoup4>=4.12.0
 google-search-results>=2.4.2
 streamlit>=1.41.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.30.0
+alembic>=1.14.0
+
+# PDF reports
+jinja2>=3.1.0
+weasyprint>=62.0
+
+# VIN decoder (uses httpx, already listed)
