@@ -11,6 +11,12 @@ class Vehicle(BaseModel):
         description="Body style (sedan, SUV, truck, coupe, hatchback, van, wagon)",
     )
     color: str | None = Field(default=None, description="Exterior color")
+    vin: str | None = Field(
+        default=None,
+        min_length=17,
+        max_length=17,
+        description="17-character Vehicle Identification Number (if provided)",
+    )
     confidence: float = Field(
         default=1.0,
         ge=0.0,
