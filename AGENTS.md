@@ -54,27 +54,48 @@ Until installed, use the Claude Code task list (`TaskCreate`) as a session-local
 
 ## Skill Invocation Guide
 
-Use the ECC skills installed at `~/.claude/skills/ecc/` for the task types below. Invoke a skill when the work clearly falls into its domain — don't invoke speculatively.
+Two skill libraries are installed. Both should be used **proactively** — read the relevant `SKILL.md` before starting work in that domain, without waiting for the user to ask.
 
-| Task | Skill(s) to invoke |
-|------|-------------------|
-| Writing or refactoring FastAPI routes, services, models | `backend-patterns`, `coding-standards` |
-| Designing new API endpoints or reviewing existing ones | `api-design` |
-| Writing or expanding the test suite | `e2e-testing` |
-| Docker, containerization, or compose changes | `docker-patterns` |
-| Deployment config, CI/CD, Railway/ECS/Fly setup | `deployment-patterns` |
-| Changes to the LLM call pipeline (`core/llm.py`, prompts) | `cost-aware-llm-pipeline`, `cost-tracking` |
-| Adding PostgreSQL, SQLAlchemy, or schema migrations | `database-migrations` |
-| Web scraping pipeline (`price_search.py`, trafilatura) | `data-scraper-agent` |
-| Research tasks (market research, API comparison, pricing) | `deep-research` |
-| Security audit or adding auth/rate-limiting | invoke `/security-review` |
+### Skill paths
 
-### How to invoke a skill
+| Library | Location | What it covers |
+|---------|----------|----------------|
+| **ECC** | `~/.claude/skills/ecc/<skill-name>/SKILL.md` | Backend, API, DB, Docker, LLM pipelines, testing, deployment |
+| **ui-ux-pro-max** | `~/.claude/skills/ui-ux-pro-max/SKILL.md` | All UI/UX work — pages, components, color, typography, accessibility, layout |
 
-At the top of your response when working in a skill domain, state:
-> "Invoking skill: `<skill-name>`"
+### When to invoke (proactively — no user prompt needed)
 
-Then follow the guidance from that skill's `SKILL.md` for the duration of that task.
+| Task domain | Skill(s) to read |
+|-------------|-----------------|
+| Any UI component, page, or design decision (Next.js, Tailwind) | `ui-ux-pro-max` ← **always for frontend work** |
+| FastAPI routes, services, Pydantic models | `~/.claude/skills/ecc/backend-patterns/SKILL.md`, `~/.claude/skills/ecc/fastapi-patterns/SKILL.md` |
+| API endpoint design or review | `~/.claude/skills/ecc/api-design/SKILL.md` |
+| Writing or expanding the test suite | `~/.claude/skills/ecc/e2e-testing/SKILL.md` |
+| Docker, containerization, compose changes | `~/.claude/skills/ecc/docker-patterns/SKILL.md` |
+| Deployment config, CI/CD, Railway/ECS | `~/.claude/skills/ecc/deployment-patterns/SKILL.md` |
+| LLM pipeline (`core/llm.py`, prompts, providers) | `~/.claude/skills/ecc/cost-aware-llm-pipeline/SKILL.md` |
+| PostgreSQL, SQLAlchemy, Alembic migrations | `~/.claude/skills/ecc/database-migrations/SKILL.md` |
+| Web scraping pipeline (`price_search.py`) | `~/.claude/skills/ecc/data-scraper-agent/SKILL.md` |
+| Research tasks (market research, API comparison) | `~/.claude/skills/ecc/deep-research/SKILL.md` |
+| Security audit, auth, rate-limiting | `~/.claude/skills/ecc/security-review/SKILL.md` |
+| React patterns, hooks, state management | `~/.claude/skills/ecc/react-patterns/SKILL.md` |
+
+### How invocation works
+
+Skills are **not** loaded automatically — they must be explicitly read. Before starting work in a skill domain:
+
+1. Read the `SKILL.md` at the path above using the Read tool
+2. Apply its guidance for the duration of the task
+3. No user prompt needed — this is self-directed
+
+**ECC rules** (`~/.claude/rules/ecc/`) are different — they ARE loaded automatically every session and apply passively to all code written (immutability, error handling, naming, etc.).
+
+### What "invoking" looks like
+
+When reading a skill, briefly note it so the user knows it's being applied:
+> Reading `ui-ux-pro-max` for component design guidance...
+
+Then apply it. Don't skip this for frontend work — the `ui-ux-pro-max` skill enforces anti-template policy, typography, depth, and accessibility standards that prevent generic-looking UI.
 
 ---
 
