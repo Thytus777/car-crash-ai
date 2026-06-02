@@ -2,45 +2,46 @@
 
 ## Overview
 
-A native iOS app built with Swift and SwiftUI that captures photos of a damaged vehicle, identifies the vehicle via AI, detects damage per component with severity scoring, and estimates repair costs — all on-device with direct API calls to cloud AI providers (no backend server required).
+An AI-powered system that accepts multiple images of a vehicle after an accident and produces a complete damage assessment report including vehicle identification, per-component damage severity, repair/replace recommendations, and cost estimates.
 
 ---
 
 ## High-Level Flow
 
 ```
-User takes / selects photos (Camera + PHPicker)
+User uploads images (Next.js)
         │
         ▼
 ┌─────────────────────┐
-│  Image Preprocessing │  ← validate, resize, normalize (UIImage / CoreImage)
+│  Image Preprocessing │  ← validate, resize, blur/brightness check
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
-│ Vehicle Identification│  ← AI detection OR manual entry fallback
+│ Vehicle Identification│  ← VIN decode (NHTSA) OR vision LLM
 │ (make, model, year)  │
 └────────┬────────────┘
          │
          ▼
+┌──────────────────────────┐
+│ Damage Detection          │
+│ Zone passes OR consensus  │  ← per-component severity 0.0–1.0
+│ Calibrated thresholds     │     calibrated per component type
+└────────┬─────────────────┘
+         │
+         ▼
 ┌─────────────────────────┐
-│ Damage Detection &       │
-│ Component Classification │  ← per-component severity 0.0–1.0
+│ Cost Estimation          │  ← part prices + labor estimates
 └────────┬────────────────┘
          │
          ▼
 ┌─────────────────────────┐
-│ Repair / Replace Logic   │  ← severity > 0.3 → replace; ≤ 0.3 → repair
+│ Sanity Check             │  ← second LLM pass reviews full report
 └────────┬────────────────┘
          │
          ▼
 ┌─────────────────────────┐
-│ Cost Estimation          │  ← part prices (SerpAPI + CSV fallback) + labor
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│ Report View              │  ← structured on-screen report (SwiftUI)
+│ Persist + Report         │  ← PostgreSQL + PDF/HTML via WeasyPrint
 └─────────────────────────┘
 ```
 
@@ -48,337 +49,275 @@ User takes / selects photos (Camera + PHPicker)
 
 ## 1. Image Input & Preprocessing
 
-**What it does:** Accept 1–10 images of the damaged vehicle (front, rear, sides, close-ups) via the device camera or photo library.
+**What it does:** Accept 1–10 images of the damaged vehicle (front, rear, sides, close-ups).
 
-**Details:**
-- **Camera capture:** `AVCaptureSession` via a custom `CameraView` (UIViewControllerRepresentable wrapping UIImagePickerController or AVFoundation)
-- **Photo library:** `PHPickerViewController` for multi-image selection
-- Supported formats: JPEG, PNG, HEIC (native iOS support — no conversion needed)
+**Implemented:**
+- Supported formats: JPEG, PNG, HEIC (convert HEIC → JPEG on ingest)
 - Validate: minimum resolution (640×480), file size limits (≤ 20 MB each)
-- Resize to a consistent resolution for the AI model (e.g., 1024×1024) using `CoreGraphics`
-- Convert to JPEG `Data` for API upload; strip EXIF where not needed
+- Resize to 1024×1024 using LANCZOS resampling
+- Blur detection via `ImageFilter.FIND_EDGES` + variance (threshold 80.0)
+- Brightness check via `ImageStat.Stat` mean (dark < 50, overexposed > 220)
+- Angle guidance heuristic (image count vs. expected 4 angles)
+- Quality warnings returned in upload response
 
-**Tech:** `UIImage`, `CoreImage`, `CoreGraphics`, `PhotosUI` (PHPicker).
+**Tech:** Python + Pillow (`backend/app/services/image_proc.py`)
 
 ---
 
 ## 2. Vehicle Identification
 
-**What it does:** Determine the make, model, year, and trim of the vehicle.
+**What it does:** Determine the make, model, and year of the vehicle.
 
-**Approach — Two Paths (try AI first, fall back to user):**
+**Implemented — Two Paths:**
 
-### Path A — Vision AI Auto-Detection
-- Send one or more clear images to a Vision LLM (Gemini or OpenAI)
-- Prompt: *"Identify the make, model, approximate year, and body style of this vehicle."*
-- Parse structured JSON response
-- Confidence threshold: if the model returns confidence < 0.7, fall back to Path B
+### Path A — VIN Decode (preferred)
+- User provides 17-char VIN in the analyze request
+- `vin_decoder.py` calls NHTSA vPIC API (free, no key)
+- Returns `Vehicle` with `confidence=1.0`
+- Falls back to Path B on `VINDecodeError`
 
-### Path B — User Manual Entry Fallback
-- Present a SwiftUI form: "We couldn't confidently identify your vehicle. Please provide: Make, Model, Year"
-- Validate against a static vehicle dataset bundled in-app
+### Path B — Vision AI Auto-Detection
+- Photos sent to Gemini/OpenAI vision model
+- If confidence < 0.70: `vehicle_confirmation_needed=True` in response, user fills in make/model/year
 
-**Why this matters:** Vehicle identity determines part catalog, part prices, and labor rates.
-
-**Data sources for vehicle data:**
-
-| Source | Cost | Notes |
-|--------|------|-------|
-| NHTSA VIN Decoder API | Free | Decode VIN → make/model/year (URLSession call) |
-| Static dataset (bundled CSV) | Free | Offline reference, bundled in app |
+**Tech:** `backend/app/services/vin_decoder.py`, `backend/app/services/vehicle_id.py`
 
 ---
 
 ## 3. Damage Detection & Severity Scoring
 
-**What it does:** Identify which components are damaged and score severity from 0.0 (no damage) to 1.0 (destroyed).
+**What it does:** Identify which components are damaged and score severity from 0.0 to 1.0.
 
-### Components to Detect
+### Zone-based Passes (default)
+
+Three focused LLM passes, each with a constrained component list:
 
 | Zone | Components |
 |------|-----------|
-| Front | Front bumper, hood, grille, headlights (L/R), fenders (L/R), windshield |
-| Side | Doors (FL/FR/RL/RR), side mirrors (L/R), rocker panels, quarter panels |
-| Rear | Rear bumper, trunk/tailgate, taillights (L/R), rear windshield |
-| Structural | Frame, A/B/C pillars, roof, undercarriage |
-| Other | Wheels/tires, suspension (visible), exhaust |
+| Front | front_bumper, hood, grille, headlights (L/R), front fenders (L/R), windshield_front, a_pillars |
+| Rear | rear_bumper, trunk, taillights (L/R), quarter panels (L/R), windshield_rear |
+| Side | all doors (FL/FR/RL/RR), mirrors (L/R), rocker panels, b_pillars, roof, all wheels |
 
-### Approach — Vision LLM (Chosen)
+Results merged by worst severity per component.
 
-Use Google Gemini (default) or OpenAI GPT-4 Vision (fallback) with structured output prompting:
+### Consensus Mode (optional, `use_consensus=true`)
 
-```
-Prompt: "Analyze these images of a damaged vehicle. For each damaged
-component, provide:
-- component_name (from standard list)
-- damage_type (scratch, dent, crack, shatter, crush, deformation)
-- severity (0.0 to 1.0)
-- description (brief)
-Return as JSON array."
-```
+Runs Gemini and OpenAI in parallel via `asyncio.gather`. Averages severity scores; flags divergence ≥ 0.25. The higher-severity source's damage type and description are used.
 
-**Pros:** No training data needed, handles varied angles, produces structured output.
-**Cons:** API costs (~$0.01–0.05 per image), non-deterministic, needs prompt tuning.
+### Calibrated Per-Component Thresholds
 
-> **Future upgrade path:** Once we have enough labeled data from real assessments, train a
-> CoreML model for fast on-device damage region detection and feed those crops into the
-> Vision LLM for detailed severity scoring (hybrid approach).
+| Component type | Replace threshold | Rationale |
+|----------------|------------------|-----------|
+| Structural (a_pillar, frame) | 0.20 | Safety critical |
+| Glass (windshields) | 0.15 | Safety critical |
+| Safety lighting | 0.20 | Legal requirement |
+| Cosmetic panels (doors, hood) | 0.35 | Industry standard |
+| Rocker panels | 0.40 | Cosmetic, hard to access |
 
-### Severity Scale & Recommendations
+### Severity Scale
 
 | Severity | Description | Recommendation |
 |----------|-------------|----------------|
-| 0.0–0.1 | Cosmetic (light scratch, scuff) | Minor repair / buff out |
-| 0.1–0.3 | Minor (small dent, paint chip) | Repair (PDR, touch-up paint) |
-| 0.3–0.6 | Moderate (significant dent, crack) | **Replace recommended** |
-| 0.6–0.8 | Severe (large deformation, shattered) | **Replace required** |
-| 0.8–1.0 | Destroyed (component non-functional) | **Replace required** |
+| 0.0–0.1 | Cosmetic (light scratch) | Minor repair |
+| 0.1–0.3 | Minor (small dent, chip) | Repair |
+| 0.3–0.6 | Moderate (significant damage) | Replace recommended |
+| 0.6–0.8 | Severe (large deformation) | Replace required |
+| 0.8–1.0 | Destroyed | Replace required |
 
-> **Decision threshold:** severity > 0.3 → recommend replacement; ≤ 0.3 → recommend repair.
-
----
-
-## 4. Cost Estimation
-
-**What it does:** Estimate the total repair cost broken into: part cost + labor cost.
-
-### Part Replacement Pricing — Live Web Search Pipeline (Chosen)
-
-No single parts database covers every vehicle. Instead, the app searches the web via SerpAPI,
-fetches snippets, and uses AI to extract structured pricing data — all from on-device URLSession calls.
-
-#### Architecture: Search → Extract → Aggregate
-
-```
-App sends query:  "Toyota Corolla 2018 front bumper"
-        │
-        ▼
-┌──────────────────────────┐
-│ Step 1 — Search API       │  SerpAPI via URLSession GET
-│                           │  Query: "{year} {make} {model} {component} price buy"
-│                           │  Returns: top 5 result URLs + snippets (JSON)
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ Step 2 — AI Price Extract │  Send search snippets to Gemini / OpenAI
-│                           │  "Extract the product price, currency, and whether
-│                           │   it's OEM or aftermarket from this text."
-│                           │  Returns structured JSON per result
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ Step 3 — Aggregate        │  Collect prices from all results
-│                           │  Return: { low, avg, high, currency, sources[] }
-│                           │  Cache result in UserDefaults (24hr TTL)
-└──────────────────────────┘
-```
-
-#### Search API
-
-| Provider | Free Tier | Paid | Notes |
-|----------|-----------|------|-------|
-| **SerpAPI** | 100 searches/mo | $50/mo for 5,000 | Best structured results, called via URLSession |
-
-> **Recommendation:** Start with **SerpAPI** (100 free/mo is enough for development).
-
-#### AI Price Extraction Prompt
-
-```
-Given the following search snippets for the car part: {year} {make} {model} {component}.
-
-Text:
----
-{snippet_text}
----
-
-Return ONLY valid JSON:
-{
-  "price": <number or null if not found>,
-  "currency": "<3-letter code, e.g. AUD, USD>",
-  "part_type": "<oem | aftermarket | unknown>",
-  "in_stock": <true | false | null>,
-  "product_name": "<exact product name from snippet>",
-  "confidence": <0.0 to 1.0>
-}
-```
-
-#### Caching & Fallback
-
-- **Cache:** Store search results + extracted prices in `UserDefaults` for 24 hours
-  - Key: `{make}_{model}_{year}_{component}`
-  - Avoids redundant API calls for the same vehicle/part combo
-- **Fallback:** If live search fails (API down, no results, all extractions low-confidence):
-  - Fall back to the static reference CSV bundled in the app
-  - Flag the estimate as "based on reference data, not live pricing"
-
-#### Static Fallback Database
-
-- File: `CarCrashAI/Data/parts_prices.csv`
-- Schema: `make,model,year_start,year_end,component,avg_price,currency,source,last_updated`
-- Covers top 30 vehicles × 20 common parts = 600 rows
-- Updated manually as a baseline safety net
-
-### Labor Cost Estimation
-
-Labor is typically estimated as: `labor_hours × hourly_rate`
-
-- **Labor hours:** Use flat-rate labor guides (e.g., Mitchell, ALLDATA) that define standard hours per repair operation
-- **Hourly rate:** Varies by region ($50–$150/hr in the US). Can use:
-  - User-input location → regional average
-  - Default to national average (~$75/hr) for MVP
-
-**Example estimate structure:**
-```json
-{
-  "vehicle": { "make": "Toyota", "model": "Camry", "year": 2020 },
-  "damages": [
-    {
-      "component": "front_bumper",
-      "severity": 0.75,
-      "recommendation": "replace",
-      "part_cost": { "low": 180, "avg": 250, "high": 350 },
-      "labor_hours": 3.5,
-      "labor_cost": 262.50,
-      "total_estimate": 512.50
-    },
-    {
-      "component": "left_headlight",
-      "severity": 0.85,
-      "recommendation": "replace",
-      "part_cost": { "low": 120, "avg": 200, "high": 400 },
-      "labor_hours": 1.0,
-      "labor_cost": 75.00,
-      "total_estimate": 275.00
-    }
-  ],
-  "totals": {
-    "parts_total": 450.00,
-    "labor_total": 337.50,
-    "grand_total": 787.50
-  }
-}
-```
+**Tech:** `backend/app/services/damage_detect.py`, `backend/app/services/consensus.py`, `backend/app/prompts/damage_assessment.py`
 
 ---
 
-## 5. Tech Stack
+## 4. Sanity Check
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Platform** | iOS 17+ / Swift 5.9+ / SwiftUI | Native performance, camera access, modern declarative UI |
-| **AI — Primary** | Google Gemini (`google-generative-ai` Swift SDK) | Vehicle ID + damage detection + price extraction |
-| **AI — Fallback** | OpenAI GPT-4 Vision (URLSession REST calls) | Redundancy if Gemini is unavailable |
-| **Image Processing** | UIImage / CoreImage / CoreGraphics | Native iOS — resize, compress, format conversion |
-| **Camera** | AVFoundation / UIImagePickerController | Photo capture with flash, focus, exposure control |
-| **Photo Picker** | PHPickerViewController (PhotosUI) | Multi-image selection from photo library |
-| **Price Search** | SerpAPI via URLSession HTTP calls | Live web search for part prices |
-| **Static Data** | Bundled CSV (parts_prices.csv) | Fallback price reference, no network needed |
-| **Local Storage** | UserDefaults (cache) / SwiftData (Phase 2) | Price cache (24hr TTL), estimate history |
-| **Configuration** | Config.plist | API keys and settings (gitignored) |
-| **Testing** | XCTest / XCUITest | Unit and UI testing |
-| **Build** | Xcode 15+ | Code written on Windows (Swift files), built on Mac |
+**What it does:** Second LLM pass that reviews the full assembled report for coherence.
+
+**Implemented:**
+- Sends full damage summary + grand total + vehicle info to LLM
+- Checks: cost plausibility, severity consistency, unusual component combinations
+- Returns list of warning strings appended to `assessment_warnings`
+
+**Tech:** `backend/app/services/sanity_check.py`
 
 ---
 
-## 6. Project Phases
+## 5. Cost Estimation
 
-### Phase 1 — MVP (4–6 weeks)
-- [ ] Camera capture view (AVFoundation / UIImagePickerController)
-- [ ] Photo library picker (PHPicker, multi-image)
-- [ ] Image preprocessing (resize, compress via CoreGraphics)
-- [ ] Vehicle identification via Gemini Vision (OpenAI fallback)
-- [ ] Damage detection via Gemini Vision with structured JSON output
-- [ ] Severity scoring + repair/replace recommendations
-- [ ] Live price search pipeline (SerpAPI → AI extract via URLSession)
-- [ ] Static parts price CSV as fallback (bundled in app)
-- [ ] Simple labor cost estimation (national average $75/hr)
-- [ ] Report view in SwiftUI (scrollable damage list + cost breakdown)
-- [ ] Config.plist for API keys
+**What it does:** Estimate total repair cost: part cost + labor cost per component.
 
-### Phase 2 — Enhanced (6–8 weeks)
-- [ ] SwiftData persistence for estimate history
-- [ ] PDF report export (UIGraphicsPDFRenderer)
-- [ ] VIN barcode scanner (AVFoundation + NHTSA API decode)
-- [ ] Regional labor rate adjustment (user-selected location)
-- [ ] Image annotation (highlight damaged areas with CoreGraphics overlays)
-- [ ] Settings screen (labor rate, currency, default AI provider)
+### Part Pricing Cascade
 
-### Phase 3 — Production (8–12 weeks)
-- [ ] On-device CoreML model for fast damage region detection
-- [ ] Hybrid approach (CoreML detection + LLM severity assessment)
-- [ ] Apple Pay integration for premium features
-- [ ] Share sheet (UIActivityViewController for sharing reports)
-- [ ] Push notifications (estimate ready, price updates)
-- [ ] Multi-language support (String Catalogs / Localizable)
-- [ ] App Store submission + TestFlight beta
+| Priority | Method | Source |
+|----------|--------|--------|
+| 1st | **Live search** | SerpAPI → httpx fetch → AI price extraction |
+| 2nd | **Static CSV** | `backend/app/data/parts_prices.csv` |
+| 3rd | **AI estimate** | LLM estimates by vehicle market segment |
+
+### Labor Cost
+
+`labor_hours × labor_rate` where rate defaults to $75/hr (configurable via `.env`). Labor hours come from a static lookup dict in `cost_estimate.py`.
+
+**Tech:** `backend/app/services/cost_estimate.py`, `backend/app/services/price_search.py`
 
 ---
 
-## 7. Key Risks & Mitigations
+## 6. Report Generation
+
+**What it does:** Produce a human-readable PDF report.
+
+**Implemented:**
+- `report_pdf.py` renders `templates/report.html` via Jinja2
+- WeasyPrint converts HTML → PDF; returns HTML bytes if WeasyPrint unavailable
+- `GET /api/v1/report/{estimate_id}` endpoint
+- Report includes: severity bars, cost table, totals, all warnings, disclaimer
+
+**Tech:** `backend/app/services/report_pdf.py`, `backend/app/templates/report.html`
+
+---
+
+## 7. Project Phases
+
+### Phase 0 — Pre-YOLO Reliability ✅ DONE
+
+Improvements that increase accuracy without requiring training data:
+
+- [x] Zone-based damage prompts (3 focused passes instead of 1 broad prompt)
+- [x] Multi-model consensus mode (dual provider parallel runs)
+- [x] Calibrated per-component replace/repair thresholds
+- [x] Image quality gates (blur + brightness detection)
+- [x] Second-pass sanity check on assembled report
+
+### Phase 1 — Production Foundation ✅ DONE
+
+- [x] PostgreSQL + SQLAlchemy async + Alembic migrations (`feature/phase1-database`)
+- [x] Docker + docker-compose with PostgreSQL service (`feature/phase1-docker`)
+- [x] PDF report generation via WeasyPrint + Jinja2 (`feature/phase1-pdf-reports`)
+- [x] Next.js 15 + React 19 + TypeScript + Tailwind frontend scaffold (`feature/phase1-nextjs-frontend`)
+- [x] Estimate history endpoints (`GET /api/v1/estimates`, `GET /api/v1/estimates/{id}`)
+- [x] Fail-safe DB persistence (response returned even on DB error)
+- [x] Image quality warnings in upload response
+- [x] Angle guidance heuristic
+
+### Phase 2 — AI Accuracy + Vehicle Data ✅ PARTIALLY DONE
+
+- [x] VIN decoder integration — NHTSA vPIC API, free, no key (`feature/phase2-vin-decoder`)
+- [x] Consensus mode — dual-provider parallel assessment
+- [ ] Regional labor rate adjustment (use user location → BLS data)
+- [ ] User accounts + authentication (JWT)
+- [ ] Accuracy validation loop (compare estimates to real invoices)
+- [ ] Image annotation (highlight damaged regions with bounding boxes)
+
+### Phase 3 — Production Scale (planned)
+
+- [ ] Custom YOLO model trained on car damage dataset
+- [ ] Hybrid approach (YOLO region detection + LLM severity scoring per crop)
+- [ ] Multi-language support
+- [ ] Insurance-grade reporting format
+- [ ] Admin dashboard for price database management
+- [ ] A/B testing for model accuracy improvements
+- [ ] Mobile-responsive frontend or dedicated mobile app
+- [ ] Price result caching (24hr TTL in PostgreSQL)
+- [ ] iOS/Android app
+
+---
+
+## 8. Key Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| Vision LLM inaccuracy on severity | Wrong cost estimates | Calibrate with real assessor data; allow user override in ReportView |
-| Part price data staleness | Incorrect quotes | Refresh prices via SerpAPI; show date of last update; CSV fallback |
-| Legal liability of estimates | User relies on incorrect estimate | Add disclaimers: "Estimate only, not a quote" |
-| API cost at scale | High operating cost per user | Migrate to on-device CoreML model in Phase 3 |
-| Poor image quality from phone camera | Bad analysis | Validate image quality before upload; guide user on photo angles with overlay hints |
-| API keys exposed in app binary | Security risk | Store keys in Config.plist (gitignored); consider App Attest + server proxy for production |
-| No network connectivity | App unusable without APIs | Graceful offline fallback: static CSV prices, cached estimates via UserDefaults |
-| App Store review rejection | Delayed launch | Follow Apple Human Interface Guidelines; no private API usage |
+| Vision LLM inaccuracy on severity | Wrong cost estimates | Zone prompts + consensus mode + per-component thresholds + sanity check |
+| Part price data staleness | Incorrect quotes | Live search first; show pricing method in response |
+| Legal liability of estimates | User relies on incorrect estimate | Disclaimer on every report: "Estimate only, not a quote" |
+| API cost at scale | High operating cost | Migrate to YOLO hybrid in Phase 3; consensus mode is opt-in |
+| Poor image quality | Bad analysis | Blur/brightness gates at upload; angle guidance in response |
+| DB failure blocking response | Loss of estimate data | Fail-safe pattern — DB write in try/except, response always returned |
 
 ---
 
-## 8. Directory Structure
+## 9. Directory Structure (Current)
 
 ```
 car-crash-ai/
-├── CarCrashAI/
-│   ├── App/
-│   │   └── CarCrashAIApp.swift         # @main App entry point
-│   ├── Views/
-│   │   ├── HomeView.swift              # Landing screen, start new assessment
-│   │   ├── CameraView.swift            # Camera capture + PHPicker
-│   │   ├── AnalysisView.swift          # Progress view during AI analysis
-│   │   └── ReportView.swift            # Damage report + cost breakdown
-│   ├── Models/
-│   │   ├── Vehicle.swift               # Vehicle data model (make, model, year)
-│   │   ├── DamageItem.swift            # Per-component damage (severity, type)
-│   │   └── CostEstimate.swift          # Cost breakdown (parts, labor, totals)
-│   ├── Services/
-│   │   ├── AIService.swift             # AI provider abstraction (Gemini + OpenAI)
-│   │   ├── VehicleIDService.swift      # Vehicle identification pipeline
-│   │   ├── DamageDetectService.swift   # Damage detection pipeline
-│   │   ├── CostEstimateService.swift   # Cost estimation pipeline
-│   │   ├── PriceSearchService.swift    # SerpAPI search + AI price extraction
-│   │   └── ImageProcessor.swift        # Resize, compress, format conversion
-│   ├── Prompts/
-│   │   ├── VehicleIdentification.swift # Prompt templates for vehicle ID
-│   │   └── DamageAssessment.swift      # Prompt templates for damage detection
-│   ├── Data/
-│   │   └── parts_prices.csv            # Static fallback parts price reference
-│   └── Resources/
-│       └── Config.plist                # API keys (gitignored)
-├── CarCrashAITests/                    # XCTest unit tests
-├── .agents/skills/                     # Amp agent skills
-├── PROJECT_PLAN.md
-├── TECHSTACK.md
-├── LEARNING.md
-├── SETUP.md
-└── README.md
+├── AGENTS.md                       # AI agent instructions + skill invocation guide
+├── PROJECT_PLAN.md                 # This file
+├── TECHSTACK.md                    # Technology reference
+├── LEARNING.md                     # Concepts guide for new contributors
+├── docker-compose.yml              # PostgreSQL + backend services
+├── backend/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── alembic/
+│   │   └── versions/
+│   │       └── 001_initial_schema.py
+│   └── app/
+│       ├── main.py
+│       ├── core/
+│       │   ├── config.py           # Settings (includes database_url)
+│       │   └── llm.py              # LLM abstraction (vision, text, dual_vision)
+│       ├── api/routes/
+│       │   ├── upload.py           # POST /upload
+│       │   ├── analysis.py         # POST /analyze (VIN + zone/consensus + sanity)
+│       │   ├── estimate.py         # GET /estimate/{id}
+│       │   ├── estimates.py        # GET /estimates
+│       │   └── report.py           # GET /report/{id} (PDF)
+│       ├── db/
+│       │   ├── session.py          # AsyncSession, get_db dependency
+│       │   └── models.py           # UploadSession, EstimateRecord ORM models
+│       ├── models/
+│       │   ├── vehicle.py          # Vehicle (with vin field)
+│       │   ├── damage.py           # DamageItem, DamageAssessment, ImageQualityWarning
+│       │   └── estimate.py         # CostEstimate, AssessmentReport (with assessment_warnings)
+│       ├── services/
+│       │   ├── image_proc.py       # Upload processing + quality checks
+│       │   ├── vehicle_id.py       # Vision-based vehicle identification
+│       │   ├── vin_decoder.py      # NHTSA VIN decode
+│       │   ├── damage_detect.py    # Zone-based damage detection
+│       │   ├── consensus.py        # Dual-provider consensus merge
+│       │   ├── sanity_check.py     # Post-report coherence check
+│       │   ├── cost_estimate.py    # Part + labor cost calculation
+│       │   ├── price_search.py     # Live web price search pipeline
+│       │   └── report_pdf.py       # Jinja2 + WeasyPrint PDF generation
+│       ├── prompts/
+│       │   ├── vehicle_identification.py
+│       │   └── damage_assessment.py  # Zone prompts + ALL_ZONES dict
+│       └── templates/
+│           └── report.html           # Jinja2 PDF report template
+├── frontend-next/
+│   ├── app/
+│   │   ├── page.tsx                # Upload + analysis stage machine
+│   │   └── history/page.tsx        # Estimate history table
+│   ├── components/
+│   │   ├── UploadZone.tsx          # Drag-and-drop upload
+│   │   └── DamageReport.tsx        # Report display + PDF download
+│   ├── lib/
+│   │   └── api.ts                  # TypeScript API client
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   └── package.json
+└── frontend/                       # Legacy Streamlit frontend (prototype)
+    └── streamlit_app.py
 ```
 
 ---
 
-## 9. Getting Started (Next Steps)
+## 10. Environment Setup
 
-1. **Create the Xcode project skeleton** — Set up `CarCrashAI` target with SwiftUI lifecycle, folder structure, and `Config.plist`
-2. **Build CameraView** — Implement camera capture and PHPicker for multi-image selection
-3. **Integrate Google Gemini** — Add `google-generative-ai` Swift SDK via SPM; implement `AIService` with Gemini as default provider
-4. **Add OpenAI fallback** — Implement raw URLSession REST calls to OpenAI Vision API in `AIService`
-5. **Build the prompt engineering** — Iterate on prompts in `Prompts/` to get reliable structured JSON output
-6. **Create the static parts database** — Populate `parts_prices.csv` with prices for common vehicles/parts
-7. **Wire up the full pipeline** — HomeView → CameraView → AnalysisView → ReportView
-8. **Test with real crash images** — Validate accuracy on Mac via Xcode Simulator, tune severity thresholds
+```bash
+# 1. Copy env file and add API keys
+cp backend/.env.example backend/.env
+# Edit: GEMINI_API_KEY, OPENAI_API_KEY (optional), SERPAPI_KEY
+
+# 2. Start services via Docker
+docker-compose up --build
+
+# 3. Run migrations (if running backend locally instead of Docker)
+cd backend && alembic upgrade head
+
+# 4. Install frontend dependencies
+cd frontend-next && npm install && npm run dev
+
+# 5. Run backend tests
+cd backend && python -m pytest tests/ -v
+```
+
+Backend API docs available at `http://localhost:8000/docs` once running.
