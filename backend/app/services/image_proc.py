@@ -1,13 +1,23 @@
-"""Image preprocessing service — validates, resizes, and stores uploaded images."""
+"""Image preprocessing service — validates, resizes, stores, and quality-checks uploaded images."""
 
 import base64
+import statistics
 import uuid
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter, ImageStat
 
 from app.core.config import settings
+from app.models.damage import AngleGuidance, ImageQualityWarning
+
+# Quality thresholds
+_BLUR_THRESHOLD = 80.0       # Laplacian variance below this → blurry
+_DARK_THRESHOLD = 50.0       # Mean brightness below this (0–255) → too dark
+_OVEREXPOSED_THRESHOLD = 220.0  # Mean brightness above this → overexposed
+
+# Angle labels we ask users to provide (order matters for guidance message)
+EXPECTED_ANGLES = ["front", "rear", "driver side", "passenger side"]
 
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/heic", "image/heif"}
 TARGET_SIZE = (1024, 1024)
@@ -75,14 +85,14 @@ def _ensure_upload_dir(upload_id: str) -> Path:
 
 async def process_upload(
     files: list[tuple[str, bytes, str]],
-) -> tuple[str, list[ProcessedImage]]:
+) -> tuple[str, list[ProcessedImage], list[ImageQualityWarning]]:
     """Process uploaded image files.
 
     Args:
         files: list of (filename, file_bytes, content_type) tuples.
 
     Returns:
-        (upload_id, list of ProcessedImage).
+        (upload_id, list of ProcessedImage, list of ImageQualityWarning).
     """
     if len(files) > settings.max_images_per_request:
         raise ImageValidationError(
@@ -95,9 +105,11 @@ async def process_upload(
     upload_id = uuid.uuid4().hex[:12]
     upload_dir = _ensure_upload_dir(upload_id)
     results: list[ProcessedImage] = []
+    all_warnings: list[ImageQualityWarning] = []
 
     for filename, data, content_type in files:
         img = _validate_image(data, filename)
+        all_warnings.extend(check_image_quality(img, filename))
 
         if img.mode == "RGBA":
             img = img.convert("RGB")
@@ -120,7 +132,89 @@ async def process_upload(
             )
         )
 
-    return upload_id, results
+    return upload_id, results, all_warnings
+
+
+def check_image_quality(
+    img: Image.Image,
+    filename: str,
+) -> list[ImageQualityWarning]:
+    """Return quality warnings for a single image (blur, brightness)."""
+    warnings: list[ImageQualityWarning] = []
+    rgb = img.convert("RGB")
+
+    # Blur detection: compute variance of the Laplacian approximation via PIL.
+    # High variance = sharp; low variance = blurry.
+    gray = rgb.convert("L")
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    stat = ImageStat.Stat(edges)
+    blur_score = stat.var[0]  # variance of edge magnitudes
+
+    if blur_score < _BLUR_THRESHOLD:
+        warnings.append(
+            ImageQualityWarning(
+                image_filename=filename,
+                warning_type="blurry",
+                message=(
+                    f"{filename} appears blurry (score {blur_score:.0f}). "
+                    "Retake with the camera steady and subject in focus."
+                ),
+            )
+        )
+
+    # Brightness detection
+    stat_rgb = ImageStat.Stat(rgb)
+    mean_brightness = statistics.mean(stat_rgb.mean[:3])
+
+    if mean_brightness < _DARK_THRESHOLD:
+        warnings.append(
+            ImageQualityWarning(
+                image_filename=filename,
+                warning_type="dark",
+                message=(
+                    f"{filename} is too dark (brightness {mean_brightness:.0f}/255). "
+                    "Ensure good lighting or retake outdoors in daylight."
+                ),
+            )
+        )
+    elif mean_brightness > _OVEREXPOSED_THRESHOLD:
+        warnings.append(
+            ImageQualityWarning(
+                image_filename=filename,
+                warning_type="overexposed",
+                message=(
+                    f"{filename} is overexposed (brightness {mean_brightness:.0f}/255). "
+                    "Avoid direct sunlight on the lens or shade the vehicle."
+                ),
+            )
+        )
+
+    return warnings
+
+
+def assess_angle_coverage(image_count: int) -> AngleGuidance:
+    """
+    Heuristic: if fewer than 4 images were uploaded we assume some angles
+    are missing. Without per-image angle classification (needs YOLO) we
+    can only guess based on count.
+    """
+    if image_count >= 4:
+        return AngleGuidance(
+            angles_detected=EXPECTED_ANGLES,
+            angles_missing=[],
+            suggestion="",
+        )
+
+    detected = EXPECTED_ANGLES[:image_count]
+    missing = EXPECTED_ANGLES[image_count:]
+    return AngleGuidance(
+        angles_detected=detected,
+        angles_missing=missing,
+        suggestion=(
+            f"Upload at least 4 photos ({', '.join(EXPECTED_ANGLES)}) "
+            f"for the most accurate assessment. Missing: {', '.join(missing)}."
+        ),
+    )
 
 
 def load_images_as_base64(upload_id: str) -> list[str]:

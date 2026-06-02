@@ -2,6 +2,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+
+class ImageQualityWarning(BaseModel):
+    image_filename: str
+    warning_type: Literal["blurry", "dark", "overexposed", "low_resolution"]
+    message: str
+
+
+class AngleGuidance(BaseModel):
+    angles_detected: list[str] = Field(default_factory=list)
+    angles_missing: list[str] = Field(default_factory=list)
+    suggestion: str = ""
+
 STANDARD_COMPONENTS = [
     "front_bumper",
     "rear_bumper",
@@ -70,4 +82,13 @@ class DamageItem(BaseModel):
 class DamageAssessment(BaseModel):
     damages: list[DamageItem] = Field(
         default_factory=list, description="List of detected damages"
+    )
+    image_quality_warnings: list[ImageQualityWarning] = Field(
+        default_factory=list, description="Per-image quality issues detected before analysis"
+    )
+    angle_guidance: AngleGuidance | None = Field(
+        default=None, description="Missing photo angles that would improve accuracy"
+    )
+    assessment_method: Literal["single_pass", "zone_pass", "consensus"] = Field(
+        default="single_pass", description="Detection method used"
     )

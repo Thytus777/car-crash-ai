@@ -50,6 +50,10 @@ class AssessmentReport(BaseModel):
     damage_assessment: DamageAssessment
     cost_estimates: list[CostEstimate] = Field(default_factory=list)
     totals: ReportTotals
+    assessment_warnings: list[str] = Field(
+        default_factory=list,
+        description="Sanity-check flags — items the AI flagged as uncertain or inconsistent",
+    )
     disclaimer: str = Field(
         default="This is an estimate only, not a quote. "
         "Actual repair costs may vary based on local labor rates, "
