@@ -234,15 +234,11 @@ async def _gemini_vision(
 
     model_name = settings.gemini_model
     config_kwargs: dict = {
-        "max_output_tokens": max_tokens,
+        "max_output_tokens": max_tokens + _GEMINI_TOKEN_PADDING,
         "temperature": temperature,
         "response_mime_type": "application/json",
+        "thinking_config": types.ThinkingConfig(thinking_budget=_GEMINI_THINKING_BUDGET),
     }
-    if "2.5" in model_name:
-        config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
-        config_kwargs["thinking_config"] = types.ThinkingConfig(
-            thinking_budget=_GEMINI_THINKING_BUDGET
-        )
 
     response = await client.aio.models.generate_content(
         model=model_name,
@@ -265,15 +261,11 @@ async def _gemini_text(
 
     model_name = settings.gemini_model
     config_kwargs: dict = {
-        "max_output_tokens": max_tokens,
+        "max_output_tokens": max_tokens + _GEMINI_TOKEN_PADDING,
         "temperature": temperature,
         "response_mime_type": "application/json",
+        "thinking_config": types.ThinkingConfig(thinking_budget=_GEMINI_THINKING_BUDGET),
     }
-    if "2.5" in model_name:
-        config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
-        config_kwargs["thinking_config"] = types.ThinkingConfig(
-            thinking_budget=_GEMINI_THINKING_BUDGET
-        )
 
     response = await client.aio.models.generate_content(
         model=model_name,
