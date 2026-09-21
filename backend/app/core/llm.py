@@ -22,7 +22,12 @@ class LLMRateLimitError(Exception):
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
-    return "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc) or "RateLimitError" in type(exc).__name__
+    exc_name = type(exc).__name__
+    return (
+        "429" in str(exc)
+        or "RESOURCE_EXHAUSTED" in str(exc)
+        or "RateLimitError" in exc_name
+    )
 
 
 def _parse_retry_delay(exc: Exception) -> float:
@@ -71,7 +76,9 @@ async def vision_completion(
                 "Gemini vision",
             )
         return await _retry(
-            lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, detail),
+            lambda: _openai_vision(
+                prompt, images_b64, max_tokens, temperature, detail
+            ),
             "OpenAI vision",
         )
     except Exception as primary_exc:
@@ -88,7 +95,9 @@ async def vision_completion(
             )
         elif fallback == "openai" and settings.openai_api_key:
             return await _retry(
-                lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, detail),
+                lambda: _openai_vision(
+                    prompt, images_b64, max_tokens, temperature, detail
+                ),
                 "OpenAI vision (fallback)",
             )
     except Exception:

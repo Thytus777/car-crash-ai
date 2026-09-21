@@ -4,7 +4,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.llm import LLMRateLimitError
-from app.models.damage import DamageAssessment
 from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
@@ -32,7 +31,9 @@ class VehicleConfirmNeeded(BaseModel):
     response_model=AssessmentReport | VehicleConfirmNeeded,
     summary="Run full damage analysis on uploaded images",
 )
-async def analyze_damage(request: AnalyzeRequest) -> AssessmentReport | VehicleConfirmNeeded:
+async def analyze_damage(
+    request: AnalyzeRequest,
+) -> AssessmentReport | VehicleConfirmNeeded:
     if request.make and request.model and request.year:
         vehicle = Vehicle(
             make=request.make,

@@ -29,7 +29,10 @@ def test_parse_valid_json() -> None:
 
 
 def test_parse_json_with_code_fences() -> None:
-    raw = '```json\n{"make": "Honda", "model": "Civic", "year": 2019, "confidence": 0.85}\n```'
+    raw = (
+        '```json\n{"make": "Honda", "model": "Civic", '
+        '"year": 2019, "confidence": 0.85}\n```'
+    )
     vehicle = _parse_vehicle_response(raw)
     assert vehicle.make == "Honda"
     assert vehicle.year == 2019

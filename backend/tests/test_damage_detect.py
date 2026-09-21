@@ -84,7 +84,10 @@ def test_parse_severity_clamped() -> None:
 
 
 def test_parse_with_code_fences() -> None:
-    raw = '```json\n[{"component": "grille", "damage_type": "crack", "severity": 0.6, "description": "Cracked"}]\n```'
+    raw = (
+        '```json\n[{"component": "grille", "damage_type": "crack", '
+        '"severity": 0.6, "description": "Cracked"}]\n```'
+    )
     items = _parse_damage_response(raw)
     assert len(items) == 1
     assert items[0].component == "grille"
