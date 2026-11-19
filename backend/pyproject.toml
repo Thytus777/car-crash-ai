@@ -1,6 +1,6 @@
 [project]
 name = "car-crash-ai"
-version = "0.5.0"
+version = "0.6.0"
 description = "AI-powered vehicle damage detection and cost estimation"
 readme = "../README.md"
 license = "MIT"
@@ -28,6 +28,9 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.66b2",
     "prometheus-client>=0.26.0",
     "pyyaml>=6",
+    "opencv-python-headless>=4.10,<5",
+    "onnxruntime>=1.19",
+    "open-image-models>=0.6,<0.7",
 ]
 
 [dependency-groups]
@@ -35,7 +38,6 @@ dev = [
     "aiosqlite>=0.22.1",
     "hypothesis>=6.170.15",
     "mypy>=1.13",
-    "opencv-python-headless>=4.10,<5",
     "pre-commit>=4.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
@@ -85,6 +87,7 @@ markers = [
     "e2e: runs against a deployed environment",
     "eval: runs the model pipeline on the labelled dataset",
     "real_triage: integration test that runs the real image-triage stage",
+    "real_redaction: test that uses the real redaction path (models optional)",
 ]
 
 [tool.coverage.run]

@@ -11,13 +11,14 @@ COV_MIN ?= 86
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate eval-smoke eval-compare \
-        test-all coverage eval run run-demo docker pre-commit clean
+        test-all coverage eval run run-demo docker pre-commit clean label loadtest models
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n",$$1,$$2}'
 
-setup: ## Install all deps (incl. dev + demo) and git hooks
+setup: ## Install all deps (incl. dev + demo), redaction models and git hooks
 	$(UV) sync --directory $(BACKEND) --group demo
+	$(RUN) python scripts/fetch_models.py
 	$(RUN) pre-commit install --install-hooks -t pre-commit -t commit-msg
 
 lock-check: ## Fail if uv.lock is out of date with pyproject.toml
@@ -80,6 +81,9 @@ run-demo: ## Start the Streamlit demo UI on :8501
 
 loadtest: ## Locust load test with simulated model latency (ARGS="--users 20 --duration 60")
 	$(UV) run --directory $(BACKEND) --group demo --group loadtest python -m loadtest.run $(ARGS)
+
+models: ## Fetch the sha256-pinned redaction models into backend/models/
+	$(RUN) python scripts/fetch_models.py
 
 docker: ## Build the backend image
 	docker build -t car-crash-ai-backend:local $(BACKEND)

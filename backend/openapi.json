@@ -584,6 +584,12 @@
             "title": "Original Filename",
             "type": "string"
           },
+          "redacted_regions": {
+            "default": 0,
+            "description": "Faces and number plates blurred before storage",
+            "title": "Redacted Regions",
+            "type": "integer"
+          },
           "width": {
             "title": "Width",
             "type": "integer"
@@ -951,7 +957,7 @@
   "info": {
     "description": "AI-powered vehicle damage detection and cost estimation",
     "title": "Car Crash AI",
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1266,6 +1272,17 @@
               "application/problem+json": {}
             },
             "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Upload vehicle images for damage assessment",

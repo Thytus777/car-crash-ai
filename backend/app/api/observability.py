@@ -142,6 +142,16 @@ def _prompts() -> Check:
         return Check(ok=False, detail=str(exc))
 
 
+def _redaction() -> Check:
+    from app.services.redaction import get_redactor
+
+    if get_redactor() is not None:
+        return Check(ok=True, detail="faces + plates")
+    if settings.redaction_required:
+        return Check(ok=False, detail="models missing; run `make models`")
+    return Check(ok=True, detail="DISABLED: models missing (dev only)")
+
+
 def _llm_provider() -> Check:
     configured = [p for p in ("gemini", "openai") if _api_key(p)]
     if settings.ai_provider not in configured and not configured:
@@ -159,10 +169,11 @@ async def readyz() -> JSONResponse:
         "prompts": _prompts(),
         "upload_dir": _upload_dir(),
         "llm_provider": _llm_provider(),
+        "redaction": _redaction(),
         # Saving results is best-effort (see #1), so the DB only degrades.
         "database": await _database(),
     }
-    required = ("prompts", "upload_dir", "llm_provider")
+    required = ("prompts", "upload_dir", "llm_provider", "redaction")
     if not all(checks[name].ok for name in required):
         status, code = "not_ready", 503
     elif not checks["database"].ok:

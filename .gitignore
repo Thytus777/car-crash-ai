@@ -65,3 +65,6 @@ evals/.cache/
 
 # Assessment result cache (RESULT_CACHE_DIR)
 cache/
+
+# Redaction models (fetched by backend/scripts/fetch_models.py)
+backend/models/

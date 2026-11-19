@@ -6,12 +6,14 @@ Validates, resizes, stores, and quality-checks uploaded images.
 import asyncio
 import json
 import re
+import shutil
 import statistics
+import time
 import uuid
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageFilter, ImageOps, ImageStat
 
 from app.core.config import settings
 from app.core.errors import (
@@ -21,6 +23,7 @@ from app.core.errors import (
     UnsupportedMediaTypeError,
 )
 from app.models.damage import AngleGuidance, ImageQualityWarning
+from app.services.redaction import redact
 
 # Quality thresholds
 _BLUR_THRESHOLD = 80.0  # Laplacian variance below this → blurry
@@ -59,6 +62,7 @@ class ProcessedImage:
         width: int,
         height: int,
         file_size_bytes: int,
+        redacted_regions: int = 0,
     ) -> None:
         self.image_id = image_id
         self.original_filename = original_filename
@@ -66,6 +70,7 @@ class ProcessedImage:
         self.width = width
         self.height = height
         self.file_size_bytes = file_size_bytes
+        self.redacted_regions = redacted_regions
 
 
 _MB = 1024 * 1024
@@ -139,9 +144,14 @@ def _prepare_image(
     img = _validate_image(data, filename)
     warnings = check_image_quality(img, filename)
 
+    # Phone photos carry their rotation in EXIF; apply it before anything else.
+    img = ImageOps.exif_transpose(img)
     if img.mode != "RGB":  # JPEG can't store alpha, palette or 16-bit modes
         img = img.convert("RGB")
     img = _resize_image(img)
+    # Blur faces and plates before the image touches disk (or a model).
+    redaction = redact(img)
+    img = redaction.image
 
     image_id = uuid.uuid4().hex[:8]
     save_path = upload_dir / f"{image_id}.jpg"
@@ -154,6 +164,7 @@ def _prepare_image(
         width=img.size[0],
         height=img.size[1],
         file_size_bytes=save_path.stat().st_size,
+        redacted_regions=redaction.regions,
     )
     return processed, warnings
 
@@ -311,3 +322,20 @@ def load_images(upload_id: str) -> list[bytes]:
         prepare_for_model(path.read_bytes(), edge, quality)
         for path in sorted(upload_dir.glob("*.jpg"))
     ]
+
+
+def purge_expired_uploads(now: float | None = None) -> int:
+    """Delete upload folders older than UPLOAD_RETENTION_HOURS; return how many."""
+    root = settings.upload_dir
+    if not root.is_dir():
+        return 0
+    cutoff = (now if now is not None else time.time()) - (
+        settings.upload_retention_hours * 3600
+    )
+    removed = 0
+    for folder in root.iterdir():
+        if folder.is_dir() and _UPLOAD_ID_RE.fullmatch(folder.name):
+            if folder.stat().st_mtime < cutoff:
+                shutil.rmtree(folder, ignore_errors=True)
+                removed += 1
+    return removed

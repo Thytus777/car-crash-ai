@@ -12,7 +12,9 @@ tests/
 .coverage
 coverage.xml
 htmlcov/
-# Eval harness and its scripts aren't part of the service.
+# Eval harness and dev scripts aren't part of the service
+# (scripts/fetch_models.py is copied explicitly by the Dockerfile).
 evals/
-scripts/
+scripts/openapi.py
+models/
 loadtest/
