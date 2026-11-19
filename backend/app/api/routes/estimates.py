@@ -1,6 +1,7 @@
 """Estimate history endpoints — retrieve saved assessments."""
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -38,7 +39,7 @@ async def get_estimate(
 )
 async def list_estimates(
     db: AsyncSession = Depends(get_db),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     result = await db.execute(
         select(
             EstimateRecord.id,

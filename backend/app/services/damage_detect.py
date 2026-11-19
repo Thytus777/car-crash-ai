@@ -13,6 +13,7 @@ from app.models.damage import (
     STANDARD_COMPONENTS,
     DamageAssessment,
     DamageItem,
+    Recommendation,
 )
 from app.prompts.damage_assessment import ALL_ZONES, build_zone_prompt
 from app.services.image_proc import assess_angle_coverage, load_images_as_base64
@@ -88,7 +89,7 @@ def _parse_damage_response(raw_text: str) -> list[DamageItem]:
         severity = float(entry.get("severity", 0.0))
         severity = max(0.0, min(1.0, severity))
         threshold = _get_threshold(component)
-        recommendation = "replace" if severity > threshold else "repair"
+        recommendation: Recommendation = "replace" if severity > threshold else "repair"
 
         items.append(
             DamageItem(

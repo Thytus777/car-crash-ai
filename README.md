@@ -17,42 +17,23 @@ Built with FastAPI (backend), Streamlit (frontend), and Google Gemini / OpenAI v
 
 ### Prerequisites
 
-- **Python 3.11+** — [Download](https://www.python.org/downloads/)
-- **Gemini API key** (free) — [Get one here](https://aistudio.google.com/apikey)
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)**. It installs the pinned Python (3.12, see `.python-version`) and all dependencies from `backend/uv.lock`.
+- **GNU make**. On Windows: `winget install ezwinports.make`.
+- **Gemini API key** (free tier available). [Get one here](https://aistudio.google.com/apikey).
 
-### 1. Clone the repo
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/Thytus777/car-crash-ai.git
 cd car-crash-ai
+make setup        # uv sync (dev + demo groups) and install the git hooks
+make help         # list every target
 ```
 
-### 2. Set up the backend
+### 2. Configure API keys
 
 ```bash
-cd backend
-
-# Create and activate virtual environment
-python -m venv venv
-
-# Windows PowerShell
-.\venv\Scripts\Activate.ps1
-
-# macOS/Linux
-# source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 3. Configure API keys
-
-```bash
-# Copy the example env file
-# Windows
-copy .env.example .env
-# macOS/Linux
-# cp .env.example .env
+cp backend/.env.example backend/.env   # Windows: copy backend\.env.example backend\.env
 ```
 
 Edit `backend/.env` and add your API key:
@@ -62,34 +43,18 @@ AI_PROVIDER=gemini
 GEMINI_API_KEY=your-gemini-key-here
 ```
 
-> **Note:** The free Gemini tier has rate limits (500 requests/day for gemini-2.5-flash). For production, set `AI_PROVIDER=openai` and add your `OPENAI_API_KEY`.
+> **Note:** The free Gemini tier is rate-limited. To use OpenAI instead, set `AI_PROVIDER=openai` and add your `OPENAI_API_KEY`.
 
-### 4. Start the backend (Terminal 1)
-
-```bash
-cd backend
-.\venv\Scripts\Activate.ps1    # Windows
-# source venv/bin/activate     # macOS/Linux
-
-uvicorn app.main:app --reload
-```
-
-The API runs at **http://localhost:8000** — interactive docs at http://localhost:8000/docs
-
-### 5. Start the frontend (Terminal 2)
+### 3. Run
 
 ```bash
-cd backend
-.\venv\Scripts\Activate.ps1    # Windows
-# source venv/bin/activate     # macOS/Linux
-
-cd ../frontend
-streamlit run streamlit_app.py
+make run          # API on http://localhost:8000 (docs at /docs)
+make run-demo     # Streamlit demo on http://localhost:8501 (second terminal)
 ```
 
-The UI opens at **http://localhost:8501**
+> The Streamlit demo still calls endpoints that were removed. It is being fixed in [#4](https://github.com/Thytus777/car-crash-ai/issues/4).
 
-### 6. Use it
+### 4. Use it
 
 1. Open http://localhost:8501
 2. Upload 1–10 photos of a damaged vehicle
@@ -112,14 +77,15 @@ car-crash-ai/
 │   │   ├── prompts/           # LLM prompt templates
 │   │   ├── services/          # Business logic (vehicle ID, damage detection, cost estimation)
 │   │   └── main.py            # FastAPI app entry point
-│   ├── tests/                 # pytest test suite
+│   ├── tests/                 # pytest: unit/ and integration/
 │   ├── .env.example           # Environment variable template
-│   └── requirements.txt       # Python dependencies
+│   ├── pyproject.toml         # Dependencies and tool config
+│   └── uv.lock                # Locked dependency versions
 ├── frontend/
 │   └── streamlit_app.py       # Streamlit UI
 └── docs/
     ├── LEARNING.md             # Detailed guide to all technologies used
-    ├── SETUP.md                # Per-feature setup instructions
+    ├── adr/                    # Architecture decision records
     ├── TECHSTACK.md            # Tech stack rationale
     └── PROJECT_PLAN.md         # Project plan / roadmap
 ```
@@ -141,7 +107,7 @@ All settings are in `backend/.env`:
 |----------|---------|-------------|
 | `AI_PROVIDER` | `gemini` | `gemini` or `openai` |
 | `GEMINI_API_KEY` | — | Gemini API key |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name |
+| `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model name |
 | `OPENAI_API_KEY` | — | OpenAI API key (when using `openai` provider) |
 | `SERPAPI_KEY` | — | SerpAPI key for live price search (optional) |
 | `LABOR_RATE_PER_HOUR` | `75.00` | Hourly labor rate for estimates |
@@ -150,9 +116,8 @@ All settings are in `backend/.env`:
 ## Running Tests
 
 ```bash
-cd backend
-.\venv\Scripts\Activate.ps1    # Windows
-# source venv/bin/activate     # macOS/Linux
-
-python -m pytest tests/ -v
+make test               # unit tests: fast, no network, no real LLM
+make test-integration   # FastAPI app with fixture LLM responses
+make coverage           # both, with the coverage gate CI enforces
+make lint typecheck     # ruff + mypy --strict
 ```

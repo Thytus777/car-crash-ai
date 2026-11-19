@@ -9,7 +9,7 @@ the final report can surface that to the user.
 import logging
 
 from app.core.llm import dual_vision_completion
-from app.models.damage import DamageItem
+from app.models.damage import DamageItem, Recommendation
 from app.services.damage_detect import COMPONENT_THRESHOLDS, _parse_damage_response
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,9 @@ def _merge_assessments(
         # Use the higher-severity item's damage_type/description for richer detail
         source = p if p.severity >= s.severity else s
         threshold = COMPONENT_THRESHOLDS.get(component, 0.3)
-        recommendation = "replace" if avg_severity > threshold else "repair"
+        recommendation: Recommendation = (
+            "replace" if avg_severity > threshold else "repair"
+        )
 
         merged.append(
             DamageItem(

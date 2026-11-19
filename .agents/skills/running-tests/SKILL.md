@@ -38,9 +38,12 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from app.main import app
 
+
 @pytest.mark.asyncio
 async def test_upload_image():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         with open("tests/fixtures/sample_damage.jpg", "rb") as f:
             response = await client.post("/api/v1/upload", files={"images": f})
         assert response.status_code == 200
@@ -49,6 +52,7 @@ async def test_upload_image():
 ### Service tests
 ```python
 from app.services.damage_detect import assess_damage
+
 
 @pytest.mark.asyncio
 async def test_severity_in_range():

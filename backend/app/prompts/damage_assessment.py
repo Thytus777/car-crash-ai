@@ -28,29 +28,44 @@ Return ONLY a valid JSON array (empty array [] if nothing is damaged):
 # --- Zone component lists ---
 
 FRONT_ZONE_COMPONENTS = [
-    "front_bumper", "hood", "grille",
-    "headlight_left", "headlight_right",
-    "fender_front_left", "fender_front_right",
+    "front_bumper",
+    "hood",
+    "grille",
+    "headlight_left",
+    "headlight_right",
+    "fender_front_left",
+    "fender_front_right",
     "windshield_front",
-    "a_pillar_left", "a_pillar_right",
+    "a_pillar_left",
+    "a_pillar_right",
 ]
 
 REAR_ZONE_COMPONENTS = [
-    "rear_bumper", "trunk",
-    "taillight_left", "taillight_right",
-    "quarter_panel_left", "quarter_panel_right",
+    "rear_bumper",
+    "trunk",
+    "taillight_left",
+    "taillight_right",
+    "quarter_panel_left",
+    "quarter_panel_right",
     "windshield_rear",
 ]
 
 SIDE_ZONE_COMPONENTS = [
-    "door_front_left", "door_front_right",
-    "door_rear_left", "door_rear_right",
-    "mirror_left", "mirror_right",
-    "rocker_panel_left", "rocker_panel_right",
-    "b_pillar_left", "b_pillar_right",
+    "door_front_left",
+    "door_front_right",
+    "door_rear_left",
+    "door_rear_right",
+    "mirror_left",
+    "mirror_right",
+    "rocker_panel_left",
+    "rocker_panel_right",
+    "b_pillar_left",
+    "b_pillar_right",
     "roof",
-    "wheel_front_left", "wheel_front_right",
-    "wheel_rear_left", "wheel_rear_right",
+    "wheel_front_left",
+    "wheel_front_right",
+    "wheel_rear_left",
+    "wheel_rear_right",
 ]
 
 ALL_ZONES = {

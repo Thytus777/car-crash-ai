@@ -46,3 +46,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Type checking / coverage
+.mypy_cache/
+coverage.xml
+
+# Next.js generated
+frontend-next/next-env.d.ts
+
+# Local agent settings
+.claude/settings.local.json

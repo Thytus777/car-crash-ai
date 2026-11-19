@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from app.core.llm import text_completion
 from app.models.damage import DamageItem
-from app.models.estimate import CostEstimate
+from app.models.estimate import CostEstimate, PricingMethod
 from app.models.vehicle import Vehicle
 from app.prompts.price_estimation import PRICE_ESTIMATION_PROMPT
 from app.services.labor import get_labor_cost
@@ -30,11 +30,12 @@ async def estimate_cost(
         component=damage.component,
     )
 
+    pricing_method: PricingMethod
     if live_results:
         prices = [r.price for r in live_results]
         part_low = min(prices)
         part_high = max(prices)
-        part_avg = (sum(prices) / len(prices)).quantize(Decimal("0.01"))
+        part_avg = (sum(prices, Decimal("0")) / len(prices)).quantize(Decimal("0.01"))
         pricing_method = "live_search"
     else:
         static_price = lookup_static_price(
@@ -96,7 +97,13 @@ async def _ai_estimate_price(
         high = Decimal(str(data["price_high"])).quantize(Decimal("0.01"))
         logger.info(
             "AI price estimate for %s %s %d %s: $%s / $%s / $%s",
-            vehicle.make, vehicle.model, vehicle.year, component, low, avg, high,
+            vehicle.make,
+            vehicle.model,
+            vehicle.year,
+            component,
+            low,
+            avg,
+            high,
         )
         return low, avg, high
     except Exception:

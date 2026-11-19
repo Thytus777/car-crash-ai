@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -26,13 +27,14 @@ class UploadSession(Base):
     )
 
     @property
-    def quality_warnings(self) -> list[dict]:
+    def quality_warnings(self) -> list[dict[str, Any]]:
         if self.quality_warnings_json:
-            return json.loads(self.quality_warnings_json)
+            warnings: list[dict[str, Any]] = json.loads(self.quality_warnings_json)
+            return warnings
         return []
 
     @quality_warnings.setter
-    def quality_warnings(self, value: list[dict]) -> None:
+    def quality_warnings(self, value: list[dict[str, Any]]) -> None:
         self.quality_warnings_json = json.dumps(value)
 
 

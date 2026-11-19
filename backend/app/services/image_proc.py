@@ -15,8 +15,8 @@ from app.core.config import settings
 from app.models.damage import AngleGuidance, ImageQualityWarning
 
 # Quality thresholds
-_BLUR_THRESHOLD = 80.0       # Laplacian variance below this → blurry
-_DARK_THRESHOLD = 50.0       # Mean brightness below this (0–255) → too dark
+_BLUR_THRESHOLD = 80.0  # Laplacian variance below this → blurry
+_DARK_THRESHOLD = 50.0  # Mean brightness below this (0–255) → too dark
 _OVEREXPOSED_THRESHOLD = 220.0  # Mean brightness above this → overexposed
 
 # Angle labels we ask users to provide (order matters for guidance message)
@@ -61,9 +61,7 @@ def _validate_image(data: bytes, filename: str) -> Image.Image:
         img.verify()
         img = Image.open(BytesIO(data))
     except Exception as exc:
-        raise ImageValidationError(
-            f"{filename}: not a valid image file"
-        ) from exc
+        raise ImageValidationError(f"{filename}: not a valid image file") from exc
 
     width, height = img.size
     if width < settings.min_image_width or height < settings.min_image_height:
@@ -110,7 +108,7 @@ async def process_upload(
     results: list[ProcessedImage] = []
     all_warnings: list[ImageQualityWarning] = []
 
-    for filename, data, content_type in files:
+    for filename, data, _content_type in files:
         img = _validate_image(data, filename)
         all_warnings.extend(check_image_quality(img, filename))
 

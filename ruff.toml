@@ -1,0 +1,18 @@
+# Shared by backend/ and frontend/ (Streamlit). Run via `make lint` / `make format`.
+target-version = "py312"
+line-length = 88
+extend-exclude = ["frontend-next"]
+
+[lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC"]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are designed to be used as defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form"]
+
+[lint.per-file-ignores]
+# Long UI strings; the file is rewritten against /v1 in #4, drop this then.
+"frontend/streamlit_app.py" = ["E501"]

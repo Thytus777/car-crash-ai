@@ -1,3 +1,12 @@
+# Normalise text to LF in the repo regardless of contributor OS.
+* text=auto eol=lf
+
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.webp binary
+*.pdf binary
+
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads

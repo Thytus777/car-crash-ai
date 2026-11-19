@@ -14,6 +14,7 @@ class AngleGuidance(BaseModel):
     angles_missing: list[str] = Field(default_factory=list)
     suggestion: str = ""
 
+
 STANDARD_COMPONENTS = [
     "front_bumper",
     "rear_bumper",
@@ -63,9 +64,7 @@ Recommendation = Literal["repair", "replace"]
 
 
 class DamageItem(BaseModel):
-    component: str = Field(
-        ..., description="Component name from standard list"
-    )
+    component: str = Field(..., description="Component name from standard list")
     damage_type: DamageType = Field(..., description="Type of damage observed")
     severity: float = Field(
         ...,

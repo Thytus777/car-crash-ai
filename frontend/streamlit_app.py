@@ -7,7 +7,9 @@ API_BASE = "http://localhost:8000/api/v1"
 
 st.set_page_config(page_title="Car Crash AI", page_icon="🚗", layout="wide")
 st.title("🚗 Car Crash Damage Assessment")
-st.markdown("Upload photos of your damaged vehicle to get an AI-powered damage report and cost estimate.")
+st.markdown(
+    "Upload photos of your damaged vehicle to get an AI-powered damage report and cost estimate."
+)
 
 # --- Sidebar: Vehicle Info Override ---
 with st.sidebar:
@@ -15,7 +17,9 @@ with st.sidebar:
     st.caption("Leave blank to let AI identify the vehicle automatically.")
     override_make = st.text_input("Make", placeholder="e.g. Toyota")
     override_model = st.text_input("Model", placeholder="e.g. Camry")
-    override_year = st.number_input("Year", min_value=1990, max_value=2026, value=None, step=1)
+    override_year = st.number_input(
+        "Year", min_value=1990, max_value=2026, value=None, step=1
+    )
 
 # --- Image Upload ---
 uploaded_files = st.file_uploader(
@@ -50,7 +54,9 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
         if resp.status_code == 429:
             detail = resp.json().get("detail", "")
             st.error(f"⏳ AI rate limit reached: {detail}")
-            st.info("💡 Tip: Wait a few minutes and try again, or check your API key quotas at https://ai.google.dev/gemini-api/docs/rate-limits")
+            st.info(
+                "💡 Tip: Wait a few minutes and try again, or check your API key quotas at https://ai.google.dev/gemini-api/docs/rate-limits"
+            )
             st.stop()
 
     def _handle_error(resp: httpx.Response, step: str) -> None:
@@ -85,17 +91,23 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
                 f"AI guess: **{guess.get('year', '?')} {guess.get('make', '?')} "
                 f"{guess.get('model', '?')}** (confidence: {guess.get('confidence', 0):.0%})"
             )
-            st.markdown("Please enter the correct vehicle info in the sidebar and re-run.")
+            st.markdown(
+                "Please enter the correct vehicle info in the sidebar and re-run."
+            )
             st.stop()
 
-        st.write(f"✅ Identified: {vehicle_data.get('year')} {vehicle_data.get('make')} {vehicle_data.get('model')}")
+        st.write(
+            f"✅ Identified: {vehicle_data.get('year')} {vehicle_data.get('make')} {vehicle_data.get('model')}"
+        )
         status.update(label="✅ Step 1/3 — Vehicle identified", state="complete")
 
     # --- Step 2: Damage Detection ---
     with st.status("🔍 Step 2/3 — Analyzing damage...", expanded=True) as status:
         try:
             damage_resp = httpx.post(
-                f"{API_BASE}/detect-damage", json={"upload_id": upload_id}, timeout=120.0
+                f"{API_BASE}/detect-damage",
+                json={"upload_id": upload_id},
+                timeout=120.0,
             )
             _handle_error(damage_resp, "Damage detection")
             damage_data = damage_resp.json()
@@ -105,7 +117,10 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
 
         num_damages = len(damage_data.get("damages", []))
         st.write(f"✅ Found {num_damages} damaged component(s)")
-        status.update(label=f"✅ Step 2/3 — Found {num_damages} damaged component(s)", state="complete")
+        status.update(
+            label=f"✅ Step 2/3 — Found {num_damages} damaged component(s)",
+            state="complete",
+        )
 
     # --- Step 3: Cost Estimation ---
     with st.status("💰 Step 3/3 — Estimating repair costs...", expanded=True) as status:
@@ -121,7 +136,9 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
             st.error(f"Cost estimation failed: {e}")
             st.stop()
 
-        st.write(f"✅ Estimated costs for {len(report.get('cost_estimates', []))} component(s)")
+        st.write(
+            f"✅ Estimated costs for {len(report.get('cost_estimates', []))} component(s)"
+        )
         status.update(label="✅ Step 3/3 — Cost estimation complete", state="complete")
 
     # --- Vehicle Info ---

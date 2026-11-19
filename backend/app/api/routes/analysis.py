@@ -43,6 +43,19 @@ class VehicleConfirmNeeded(BaseModel):
     message: str
 
 
+async def _identify_from_images(upload_id: str) -> Vehicle:
+    """Vision-LLM vehicle identification, mapping failures to HTTP errors."""
+    try:
+        return await identify_vehicle(upload_id)
+    except LLMRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Vehicle identification failed: {exc}",
+        ) from exc
+
+
 @router.post(
     "/analyze",
     response_model=AssessmentReport | VehicleConfirmNeeded,
@@ -62,32 +75,14 @@ async def analyze_damage(
         )
     elif request.vin:
         from app.services.vin_decoder import VINDecodeError, decode_vin
+
         try:
             vehicle = await decode_vin(request.vin)
         except VINDecodeError:
             # VIN failed — fall through to vision ID
-            vehicle = None  # type: ignore[assignment]
-
-        if vehicle is None:
-            try:
-                vehicle = await identify_vehicle(request.upload_id)
-            except LLMRateLimitError as exc:
-                raise HTTPException(status_code=429, detail=str(exc))
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Vehicle identification failed: {exc}",
-                )
+            vehicle = await _identify_from_images(request.upload_id)
     else:
-        try:
-            vehicle = await identify_vehicle(request.upload_id)
-        except LLMRateLimitError as exc:
-            raise HTTPException(status_code=429, detail=str(exc))
-        except Exception as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Vehicle identification failed: {exc}",
-            )
+        vehicle = await _identify_from_images(request.upload_id)
 
         if needs_user_input(vehicle):
             return VehicleConfirmNeeded(
@@ -106,12 +101,12 @@ async def analyze_damage(
             use_consensus=request.use_consensus,
         )
     except LLMRateLimitError as exc:
-        raise HTTPException(status_code=429, detail=str(exc))
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Damage detection failed: {exc}",
-        )
+        ) from exc
 
     # --- Cost estimation ---
     cost_estimates: list[CostEstimate] = []
@@ -122,9 +117,9 @@ async def analyze_damage(
     parts_total = sum(
         (c.part_cost_avg for c in cost_estimates), Decimal("0.00")
     ).quantize(Decimal("0.01"))
-    labor_total = sum(
-        (c.labor_cost for c in cost_estimates), Decimal("0.00")
-    ).quantize(Decimal("0.01"))
+    labor_total = sum((c.labor_cost for c in cost_estimates), Decimal("0.00")).quantize(
+        Decimal("0.01")
+    )
     grand_total = (parts_total + labor_total).quantize(Decimal("0.01"))
 
     report = AssessmentReport(

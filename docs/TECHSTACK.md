@@ -332,7 +332,9 @@ Body style strings from NHTSA are normalized to standard values (`sedan`, `suv`,
 
 ```python
 engine = create_async_engine(settings.database_url, pool_size=5, max_overflow=10)
-AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 ```
 
 Dependency injection via `get_db() -> AsyncGenerator[AsyncSession, None]` — commits on success, rolls back on exception.
