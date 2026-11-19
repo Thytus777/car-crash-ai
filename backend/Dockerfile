@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # weasyprint needs these system libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
