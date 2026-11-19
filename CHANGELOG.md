@@ -15,6 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Architecture decision records in `docs/adr/`.
 
 ### Changed
+- Prompts live in versioned, immutable template files (`backend/prompts/<version>/`). Every analysis response records `meta.prompt_version`, the models used and token counts ([#25](https://github.com/Thytus777/car-crash-ai/issues/25), [ADR 0002](docs/adr/0002-versioned-prompt-files.md)).
 - LLM calls use native structured output (Gemini `response_json_schema`, OpenAI `chat.completions.parse`) with Pydantic schemas, per-attempt timeouts, jittered exponential backoff, bounded re-asks on invalid output, and provider fallback ([#6](https://github.com/Thytus777/car-crash-ai/issues/6)).
 - Error responses are RFC 9457 `application/problem+json` ([#24](https://github.com/Thytus777/car-crash-ai/issues/24)).
 - Trunk-based workflow on `main`; the `develop` branch is retired.
@@ -25,6 +26,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unused dependencies `beautifulsoup4` and `google-search-results`.
 
 ### Fixed
+- The vehicle-ID prompt was sent unformatted, so the model saw its JSON example with doubled braces. Prompt v2 fixes it ([#25](https://github.com/Thytus777/car-crash-ai/issues/25)).
 - Failed LLM stages were reported as success: a failed damage zone read as "no damage", a failed price estimate became a made-up $150/$300/$500, and a failed sanity check read as "no concerns". Reports now carry `status` (`complete`/`partial`) and `issues`. Unpriced parts have null costs and are listed in `totals.unpriced_components`, and if every zone fails the request returns 503 ([#3](https://github.com/Thytus777/car-crash-ai/issues/3)).
 - `/analyze` returned 500 whenever saving the estimate failed, and saving always failed on a missing foreign-key parent ([#1](https://github.com/Thytus777/car-crash-ai/issues/1)).
 - Path traversal through `upload_id` ([#2](https://github.com/Thytus777/car-crash-ai/issues/2)).

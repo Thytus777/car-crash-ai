@@ -8,7 +8,7 @@ Car Crash AI: crash photos go in, a vision LLM identifies damaged components, an
   - `app/api/routes/`: HTTP layer
   - `app/services/`: pipeline stages
   - `app/core/llm.py`: provider abstraction
-  - `app/prompts/`: prompt text
+  - `app/prompts/`: prompt registry; the text lives in `backend/prompts/<version>/*.md`
   - `app/models/`: Pydantic schemas
   - `app/db/`: SQLAlchemy + Alembic
 - `frontend-next/`: Next.js app, the primary client.
@@ -45,6 +45,7 @@ Gotchas:
 
 - **Schemas:** Pydantic v2 models for every request, response and LLM output. Money is `Decimal` with 2 places. Severity is a float in `[0, 1]`. Component names come from `STANDARD_COMPONENTS` in `app/models/damage.py`.
 - **Types:** the backend passes mypy `--strict` with no per-module exceptions.
+- **Prompts:** get prompt text through `render(name, **values)` from `app/prompts`. Versions are immutable (ADR 0002): to change a prompt, copy `backend/prompts/<current>/` to the next version, edit it there, bump `prompt_version`, and add the expected diff to `tests/unit/test_prompts.py`. Every response records `meta.prompt_version`.
 - **Model calls:** every call goes through `generate(schema, prompt, images, task=...)` in `app/core/llm.py`. Its output schema is a Pydantic model in `app/models/llm_outputs.py`; that model is both the provider's structured-output schema and the validator, so a new call means a new model there, not hand parsing. Retries, timeouts and fallback live only in `llm.py`; callers handle the typed `LLM*Error`s. Wrap work in `record_llm_calls()` to collect per-call tokens and attempts.
 - **Failures:** a stage that degrades reports it rather than guessing. Services catch only `AppError`s, typed LLM errors included: a failed zone goes in `DamageAssessment.failed_zones`, a part with no price gets `pricing_method="unpriced"` with null costs, and a failed sanity check returns `None`. The route turns these into `AssessmentReport.issues` with `status="partial"`. When nothing usable is left, e.g. every zone failed, the error propagates and becomes a 5xx problem. Never substitute a default value for a failed model call.
 - **Secrets:** they come from the environment only (`backend/.env` locally, CI secrets in Actions). `.env.example` files hold the variable names.
