@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     llm_backoff_base_s: float = 1.0
     llm_backoff_max_s: float = 10.0
 
+    # Cheap-first routing for damage zones (ADR 0003, status: proposed).
+    # Off until evals show the quality/cost trade-off is acceptable.
+    routing_enabled: bool = False
+    gemini_fast_model: str = ""  # empty: no fast tier, routing is skipped
+    openai_fast_model: str = ""
+    routing_escalation_margin: float = 0.1  # |severity - threshold|
+    routing_escalate_empty_zones: bool = False
+
     # Per-request budgets. Exceeding one is logged, counted
     # (budget_exceeded_total) and listed in meta.budget_exceeded; the
     # request still succeeds. Latency matches the p95 SLO (docs/SLO.md).
