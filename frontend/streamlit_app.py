@@ -10,6 +10,8 @@ import streamlit as st
 from api_client import ApiError, money
 
 API_URL = os.environ.get("CAR_CRASH_API_URL", "http://localhost:8000")
+# Server-side only (Streamlit runs in Python), so the key never reaches a browser.
+API_KEY = os.environ.get("CAR_CRASH_API_KEY", "")
 
 st.set_page_config(page_title="Car Crash AI", page_icon="🚗", layout="wide")
 st.title("🚗 Car Crash Damage Assessment")
@@ -18,7 +20,10 @@ st.markdown("Upload photos of a damaged vehicle to get a damage report and estim
 
 @st.cache_resource
 def _client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=httpx.Timeout(300.0, connect=10.0))
+    headers = {"X-API-Key": API_KEY} if API_KEY else {}
+    return httpx.Client(
+        base_url=API_URL, headers=headers, timeout=httpx.Timeout(300.0, connect=10.0)
+    )
 
 
 # --- Sidebar: optional vehicle override (also used to confirm a low-confidence ID)

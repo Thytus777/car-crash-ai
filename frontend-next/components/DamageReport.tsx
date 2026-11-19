@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import type { AssessmentReport } from "@/lib/api";
+import { downloadReport, type AssessmentReport } from "@/lib/api";
 
 interface Props {
   report: AssessmentReport;
@@ -175,14 +175,13 @@ export default function DamageReport({ report, estimateId, onReset }: Props) {
         ))}
         {estimateId && (
           <div className="ml-auto self-center">
-            <a
-              href={`/api/v1/report/${estimateId}`}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => downloadReport(estimateId).catch((e: Error) => console.error(e))}
               className="bg-white text-brand font-semibold px-4 py-2 rounded-lg text-sm hover:bg-blue-50 transition-colors"
             >
               Download PDF
-            </a>
+            </button>
           </div>
         )}
       </div>

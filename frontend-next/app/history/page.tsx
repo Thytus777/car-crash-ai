@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listEstimates } from "@/lib/api";
+import { downloadReport, listEstimates } from "@/lib/api";
 import Link from "next/link";
 
 interface EstimateSummary {
@@ -58,14 +58,13 @@ export default function HistoryPage() {
                     ${Number(e.grand_total).toLocaleString("en-US", { minimumFractionDigits: 0 })}
                   </td>
                   <td className="px-4 py-3">
-                    <a
-                      href={`/api/v1/report/${e.id}`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => downloadReport(e.id).catch((err: Error) => console.error(err))}
                       className="text-brand hover:underline text-xs"
                     >
                       PDF
-                    </a>
+                    </button>
                   </td>
                 </tr>
               ))}
