@@ -88,6 +88,19 @@ async def analyze_damage(
     return result
 
 
+def _confirm_message(vehicle: Vehicle) -> str:
+    guess = f"{vehicle.year or 'unknown-year'} {vehicle.make} {vehicle.model}"
+    if vehicle.year == 0:
+        return (
+            f"Couldn't determine the model year (best guess: {guess}). "
+            "Please provide make, model and year."
+        )
+    return (
+        f"Low confidence ({vehicle.confidence:.0%}) identifying vehicle as {guess}. "
+        "Please confirm or provide correct make, model, and year."
+    )
+
+
 async def _triage(upload_id: str) -> AssessmentIssue | None:
     """Reject uploads that can't be assessed; flag (not fail) if triage is down."""
     try:
@@ -114,6 +127,7 @@ async def _run_pipeline(
     triage_issue = await _triage(request.upload_id)
 
     # --- Vehicle identification ---
+    from_vision = False
     if request.make and request.model and request.year:
         vehicle = Vehicle(
             make=request.make,
@@ -129,18 +143,15 @@ async def _run_pipeline(
         except VINDecodeError:
             # VIN failed — fall through to vision ID
             vehicle = await identify_vehicle(request.upload_id)
+            from_vision = True
     else:
         vehicle = await identify_vehicle(request.upload_id)
+        from_vision = True
 
-        if needs_user_input(vehicle):
-            return VehicleConfirmNeeded(
-                vehicle_guess=vehicle,
-                message=(
-                    f"Low confidence ({vehicle.confidence:.0%}) identifying vehicle as "
-                    f"{vehicle.year} {vehicle.make} {vehicle.model}. "
-                    "Please confirm or provide correct make, model, and year."
-                ),
-            )
+    if from_vision and needs_user_input(vehicle):
+        return VehicleConfirmNeeded(
+            vehicle_guess=vehicle, message=_confirm_message(vehicle)
+        )
 
     # --- Damage detection (zone-based, optionally with consensus) ---
     damage_assessment = await detect_damage(

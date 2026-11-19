@@ -198,3 +198,29 @@ async def test_confirmation_response_also_records_the_prompt_version(
 
     assert body["status"] == "vehicle_confirmation_needed"
     assert body["meta"]["prompt_version"] == settings.prompt_version
+
+
+async def test_failed_vin_decode_still_asks_to_confirm_a_weak_vision_id(
+    client: AsyncClient,
+) -> None:
+    """Regression for #11: the VIN fallback skipped the confidence check."""
+    from app.services.vin_decoder import VINDecodeError
+
+    with (
+        patch(
+            "app.services.vin_decoder.decode_vin",
+            new_callable=AsyncMock,
+            side_effect=VINDecodeError("NHTSA unreachable"),
+        ),
+        patch(
+            "app.api.routes.analysis.identify_vehicle",
+            new_callable=AsyncMock,
+            return_value=_mock_vehicle(confidence=0.4),
+        ),
+    ):
+        response = await client.post(
+            "/api/v1/analyze",
+            json={"upload_id": UPLOAD_ID, "vin": "1HGCM82633A004352"},
+        )
+
+    assert response.json()["status"] == "vehicle_confirmation_needed"
