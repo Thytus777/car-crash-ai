@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     llm_backoff_base_s: float = 1.0
     llm_backoff_max_s: float = 10.0
 
+    # Per-request budgets. Exceeding one is logged, counted
+    # (budget_exceeded_total) and listed in meta.budget_exceeded; the
+    # request still succeeds. Latency matches the p95 SLO (docs/SLO.md).
+    request_cost_budget_usd: float | None = None  # None: no cost budget
+    request_latency_budget_s: float = 60.0
+
     # Secrets render as '**********' in repr/str/logs; read with .get_secret_value().
     openai_api_key: SecretStr = SecretStr("")
     gemini_api_key: SecretStr = SecretStr("")

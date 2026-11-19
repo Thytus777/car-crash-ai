@@ -77,6 +77,13 @@ class AssessmentMeta(BaseModel):
     llm_calls: int = Field(0, description="Model calls made (provider attempts)")
     input_tokens: int = 0
     output_tokens: int = 0
+    cost_usd: float | None = Field(
+        None, description="Model spend; null if any model used has no price"
+    )
+    latency_s: float | None = Field(None, description="Pipeline wall time")
+    budget_exceeded: list[Literal["cost", "latency"]] = Field(
+        default_factory=list, description="Per-request budgets this request exceeded"
+    )
 
     @classmethod
     def from_calls(cls, prompt_version: str, calls: Sequence[LLMCall]) -> Self:
@@ -86,6 +93,11 @@ class AssessmentMeta(BaseModel):
             llm_calls=sum(c.attempts for c in calls),
             input_tokens=sum(c.usage.input_tokens for c in calls),
             output_tokens=sum(c.usage.output_tokens for c in calls),
+            cost_usd=(
+                sum(c.cost_usd for c in calls if c.cost_usd is not None)
+                if all(c.cost_usd is not None for c in calls)
+                else None
+            ),
         )
 
 

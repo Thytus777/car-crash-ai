@@ -55,7 +55,8 @@ sum(rate(assessments_total{result=~"complete|partial"}[28d]))
 | Upstream rate limiting | `rate(http_requests_total{route="/api/v1/analyze",status="429"}[1h])` | Set by provider quotas; the fix is billing or quota, not code |
 | Model call failure rate | `sum(rate(llm_calls_total{outcome="failed"}[1h])) / sum(rate(llm_calls_total[1h]))` | Leading indicator for SLOs 1 and 4 |
 | Model latency by task | `histogram_quantile(0.95, sum by (le, task) (rate(llm_call_duration_seconds_bucket[1h])))` | Shows which stage is slowing SLO 2 |
-| Tokens per assessment | `sum(rate(llm_tokens_total[1h])) / sum(rate(assessments_total[1h]))` | Cost proxy until cost per request lands with Phase 5 budgets |
+| Cost per assessment (USD) | `sum(rate(llm_cost_usd_total[1h])) / sum(rate(assessments_total[1h]))` | Budget, not reliability: over-budget requests are counted in `budget_exceeded_total{budget="cost"}`. Only priced models count; see `app/data/model_pricing.yaml` |
+| Over latency budget | `rate(budget_exceeded_total{budget="latency"}[1h])` | Per-request view of SLO 2 (`REQUEST_LATENCY_BUDGET_S`, default 60 s) |
 | Detection quality | Component F1 from `make eval` (`evals/results/`) | Measured offline on the labelled set, not from traffic |
 
 ## Alerting (multi-window burn rate)
