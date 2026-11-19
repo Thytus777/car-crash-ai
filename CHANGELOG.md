@@ -49,6 +49,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unexpected errors no longer leak exception text in responses.
 
 ### Security
+- Untrusted input hardening ([#8](https://github.com/Thytus777/car-crash-ai/issues/8)):
+  - Prompt v4 fences scraped page text in `<page>` tags declared as untrusted, and page text can't close the fence.
+  - The vision prompts state that text in photos is never an instruction.
+  - Extracted prices outside `MIN_PART_PRICE`–`MAX_PART_PRICE`, or with a malformed currency, are discarded.
+  - Price pages are fetched only over https from public addresses: every resolved IP is checked and every redirect hop re-checked, blocking loopback, private, link-local and metadata IPs. Bodies are capped at 2 MB.
 - Faces and number plates are blurred at upload, before storage or any model call, using pretrained ONNX detectors: a YOLOv9 plate model and OpenCV YuNet for faces. Both are sha256-pinned and fetched at build time. With `REDACTION_REQUIRED` (the Docker default), uploads are refused and readiness fails if the models are missing. Redacted photos are deleted after 24 h; see `docs/DATA_RETENTION.md` and [ADR 0004](docs/adr/0004-redact-faces-and-plates-at-upload.md) ([#10](https://github.com/Thytus777/car-crash-ai/issues/10)).
 - Uploaded photos are EXIF-rotated before processing.
 - API keys and the database URL are `SecretStr`, so they render as `**********` in reprs, tracebacks and logs. Placeholder values from `.env.example` count as unset, instead of triggering doomed OpenAI fallbacks and SerpAPI calls ([#34](https://github.com/Thytus777/car-crash-ai/issues/34)).

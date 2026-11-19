@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     ai_provider: Literal["gemini", "openai"] = "gemini"
     # Directory under backend/prompts/; recorded in every analysis response.
-    prompt_version: str = "v3"
+    prompt_version: str = "v4"
     log_level: str = "INFO"
     # e.g. http://otel-collector:4318; empty disables span export.
     otel_exporter_otlp_endpoint: str = ""
@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     pricing_concurrency: int = 4  # damaged components priced at once
     price_page_concurrency: int = 5  # pages fetched/extracted at once per part
     price_search_deadline_s: float = 20.0  # then fall back to static/AI price
+    # Extracted web prices outside this range are discarded (any currency).
+    min_part_price: float = 1.0
+    max_part_price: float = 50_000.0
     # Complete reports for identical photos + settings are reused (see
     # app/services/result_cache.py); prices drift, hence the TTL.
     result_cache_enabled: bool = True

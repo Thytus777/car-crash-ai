@@ -1,8 +1,12 @@
 """Live price search pipeline — Search API → Fetch → AI Extract → Aggregate."""
 
 import asyncio
+import ipaddress
 import logging
+import re
+import socket
 from decimal import Decimal
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import trafilatura
@@ -19,6 +23,10 @@ logger = logging.getLogger(__name__)
 MAX_RESULTS = 5
 FETCH_TIMEOUT = 5.0
 MIN_CONFIDENCE = 0.5
+MAX_REDIRECTS = 3
+MAX_PAGE_BYTES = 2 * 1024 * 1024
+_PAGE_TAG = re.compile(r"<\s*/?\s*page\s*>", re.IGNORECASE)
+_CURRENCY = re.compile(r"[A-Z]{3}")
 
 
 async def search_part_prices(
@@ -78,6 +86,61 @@ async def _search_web(query: str) -> list[str]:
         return []
 
 
+async def _resolve(host: str) -> list[str]:
+    """All addresses a hostname resolves to (indirection for tests)."""
+    infos = await asyncio.to_thread(
+        socket.getaddrinfo, host, 443, type=socket.SOCK_STREAM
+    )
+    return [str(info[4][0]) for info in infos]
+
+
+async def is_public_https(url: str) -> bool:
+    """Only https URLs whose every resolved address is publicly routable.
+
+    Blocks loopback, private, link-local (incl. 169.254.169.254 metadata),
+    reserved and multicast targets. Search results are attacker-influenced,
+    so this is the server-side request forgery guard. (A DNS answer can
+    still change between this check and the connect; pinning the address
+    would close that gap.)
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        return False
+    try:
+        addresses = await _resolve(parts.hostname)
+    except OSError:
+        return False
+    return bool(addresses) and all(
+        ipaddress.ip_address(a.split("%")[0]).is_global for a in addresses
+    )
+
+
+async def _get_page(client: httpx.AsyncClient, url: str) -> tuple[str, str] | None:
+    """Fetch one page safely: re-check every redirect hop, cap the body."""
+    for _ in range(MAX_REDIRECTS + 1):
+        if not await is_public_https(url):
+            logger.info("Skipping non-public or non-https URL: %s", url)
+            return None
+        async with client.stream("GET", url) as response:
+            if response.is_redirect:
+                url = urljoin(url, response.headers.get("location", ""))
+                continue
+            response.raise_for_status()
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body += chunk
+                if len(body) > MAX_PAGE_BYTES:
+                    logger.info(
+                        "Page over %d bytes, truncated: %s", MAX_PAGE_BYTES, url
+                    )
+                    break
+            return url, bytes(body[:MAX_PAGE_BYTES]).decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+    logger.info("Too many redirects: %s", url)
+    return None
+
+
 async def _fetch_and_clean(
     urls: list[str],
 ) -> list[tuple[str, str]]:
@@ -85,26 +148,41 @@ async def _fetch_and_clean(
     limit = asyncio.Semaphore(settings.price_page_concurrency)
 
     async with httpx.AsyncClient(
-        timeout=FETCH_TIMEOUT, follow_redirects=True
+        timeout=FETCH_TIMEOUT, follow_redirects=False
     ) as client:
 
         async def fetch(url: str) -> tuple[str, str] | None:
             async with limit:
                 try:
-                    response = await client.get(url)
-                    response.raise_for_status()
+                    page = await _get_page(client, url)
                 except httpx.HTTPError:
                     logger.debug("Failed to fetch: %s", url, exc_info=True)
                     return None
+            if page is None:
+                return None
+            final_url, html = page
             # HTML-to-text is CPU-bound; keep it off the event loop.
-            text = await asyncio.to_thread(trafilatura.extract, response.text) or ""
+            text = await asyncio.to_thread(trafilatura.extract, html) or ""
             if not text:
                 return None
-            domain = url.split("/")[2] if "/" in url else url
-            return domain, text[:2000]
+            return urlsplit(final_url).hostname or final_url, text[:2000]
 
         pages = await asyncio.gather(*(fetch(url) for url in urls))
     return [page for page in pages if page is not None]
+
+
+def fence_untrusted(text: str) -> str:
+    """Stop page text from closing the prompt's <page> fence early."""
+    return _PAGE_TAG.sub("[tag removed]", text)
+
+
+def plausible(extracted: PriceExtraction) -> bool:
+    """Reject prices a manipulated or confused page could talk the model into."""
+    if extracted.price is None:
+        return False
+    if not _CURRENCY.fullmatch(extracted.currency):
+        return False
+    return settings.min_part_price <= extracted.price <= settings.max_part_price
 
 
 async def _extract_prices(
@@ -125,7 +203,7 @@ async def _extract_prices(
             make=make,
             model=model,
             component=component.replace("_", " "),
-            cleaned_text=text,
+            cleaned_text=fence_untrusted(text),
         )
         async with limit:
             try:
@@ -142,8 +220,11 @@ async def _extract_prices(
                 return None
 
         extracted = result.output
-        if extracted.price is None:
+        if not plausible(extracted):
+            if extracted.price is not None:
+                logger.info("Discarded implausible price from %s", domain)
             return None
+        assert extracted.price is not None
         return PriceResult(
             price=Decimal(str(extracted.price)).quantize(Decimal("0.01")),
             currency=extracted.currency,
