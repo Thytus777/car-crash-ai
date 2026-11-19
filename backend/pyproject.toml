@@ -1,6 +1,9 @@
 [project]
 name = "car-crash-ai"
-version = "0.7.0"
+# Not the release version (this virtual project is never published, and a real
+# version here would change uv.lock on every release). The API version lives in
+# app/__init__.py and openapi.json, both bumped by release-please.
+version = "0.0.0"
 description = "AI-powered vehicle damage detection and cost estimation"
 readme = "../README.md"
 license = "MIT"

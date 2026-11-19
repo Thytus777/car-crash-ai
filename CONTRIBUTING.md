@@ -73,6 +73,17 @@ A PR should do one thing. The template asks for:
 - screenshots for UI changes
 - the linked issue
 
+## Releases
+
+[release-please](https://github.com/googleapis/release-please) keeps a release PR open on `main`, built from Conventional Commit titles: `feat` is a minor bump, `fix` a patch, and `BREAKING CHANGE` a minor bump while below 1.0.
+
+Merging the release PR:
+1. updates `CHANGELOG.md`, `backend/app/__init__.py` and `backend/openapi.json`;
+2. tags `vX.Y.Z`;
+3. publishes a GitHub release, which promotes the already-tested staging image to production (after approval).
+
+If a PR changes the API contract, bump `__version__` in that PR (the `contract` check enforces this); release-please keeps the same number.
+
 ## Design decisions
 
 Record significant decisions as an ADR in `docs/adr/`. Copy `0000-template.md` and take the next number.

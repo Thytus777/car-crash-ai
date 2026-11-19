@@ -3,7 +3,6 @@
 import importlib.util
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -34,9 +33,7 @@ def test_committed_spec_matches_the_code() -> None:
     assert openapi.main(["openapi.py", "check"]) == 0, "run `make openapi`"
 
 
-def test_one_version_everywhere() -> None:
-    pyproject = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))
-    assert pyproject["project"]["version"] == __version__
+def test_the_spec_carries_the_api_version() -> None:
     assert openapi.generate()["info"]["version"] == __version__
 
 

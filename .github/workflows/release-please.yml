@@ -1,0 +1,28 @@
+name: release-please
+
+# Opens/updates a release PR from Conventional Commits on main. Merging it tags
+# vX.Y.Z and publishes a GitHub release, which triggers the production
+# promotion in release.yml.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # tags and releases
+      pull-requests: write # the release PR
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          # PRs opened with GITHUB_TOKEN don't trigger CI, so the release PR
+          # could never satisfy the required checks. A fine-grained PAT
+          # (contents + pull requests: write on this repo) fixes that.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
