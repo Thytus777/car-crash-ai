@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from decimal import Decimal
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -21,10 +20,9 @@ from app.models.estimate import (
     AssessmentMeta,
     AssessmentReport,
     CostEstimate,
-    ReportTotals,
 )
 from app.models.vehicle import Vehicle
-from app.services.cost_estimate import estimate_cost
+from app.services.cost_estimate import compute_totals, estimate_cost
 from app.services.damage_detect import detect_damage
 from app.services.image_proc import UPLOAD_ID_PATTERN
 from app.services.image_triage import triage_images
@@ -192,25 +190,11 @@ async def _run_pipeline(
         for component in unpriced
     )
 
-    parts_total = sum(
-        (c.part_cost_avg for c in cost_estimates if c.part_cost_avg is not None),
-        Decimal("0.00"),
-    ).quantize(Decimal("0.01"))
-    labor_total = sum((c.labor_cost for c in cost_estimates), Decimal("0.00")).quantize(
-        Decimal("0.01")
-    )
-    grand_total = (parts_total + labor_total).quantize(Decimal("0.01"))
-
     report = AssessmentReport(
         vehicle=vehicle,
         damage_assessment=damage_assessment,
         cost_estimates=cost_estimates,
-        totals=ReportTotals(
-            parts_total=parts_total,
-            labor_total=labor_total,
-            grand_total=grand_total,
-            unpriced_components=unpriced,
-        ),
+        totals=compute_totals(cost_estimates),
     )
 
     # --- Sanity check (second-pass LLM review) ---
