@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     ai_provider: Literal["gemini", "openai"] = "gemini"
     # Directory under backend/prompts/; recorded in every analysis response.
-    prompt_version: str = "v2"
+    prompt_version: str = "v3"
     gemini_model: str = "gemini-3.6-flash"
     openai_vision_model: str = "gpt-4.1-mini"
     openai_text_model: str = "gpt-4.1-nano"

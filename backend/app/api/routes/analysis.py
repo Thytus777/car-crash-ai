@@ -6,6 +6,12 @@ from pydantic import BaseModel, Field
 
 from app.api.problems import problem_responses
 from app.core.config import settings
+from app.core.errors import (
+    AppError,
+    NotAVehicleError,
+    NotFoundError,
+    UnusableImagesError,
+)
 from app.core.llm import record_llm_calls
 from app.db.repository import save_estimate
 from app.models.estimate import (
@@ -19,6 +25,7 @@ from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
 from app.services.damage_detect import detect_damage
 from app.services.image_proc import UPLOAD_ID_PATTERN
+from app.services.image_triage import triage_images
 from app.services.sanity_check import run_sanity_check
 from app.services.vehicle_id import identify_vehicle, needs_user_input
 
@@ -60,6 +67,11 @@ class VehicleConfirmNeeded(BaseModel):
     response_model=AssessmentReport | VehicleConfirmNeeded,
     summary="Run full damage analysis on uploaded images",
     responses=problem_responses(404, 422, 429, 500, 502, 503, 504),
+    description=(
+        "Screens the images (422 not-a-vehicle / unusable-images), identifies "
+        "the vehicle, detects damage per zone, prices each part and reviews the "
+        "result. Degraded stages are listed in `issues` with `status: partial`."
+    ),
 )
 async def analyze_damage(
     request: AnalyzeRequest,
@@ -74,9 +86,31 @@ async def analyze_damage(
     return result
 
 
+async def _triage(upload_id: str) -> AssessmentIssue | None:
+    """Reject uploads that can't be assessed; flag (not fail) if triage is down."""
+    try:
+        triage = await triage_images(upload_id)
+    except (NotAVehicleError, UnusableImagesError, NotFoundError):
+        raise
+    except AppError as exc:
+        logger.warning("Image triage unavailable: %s", exc.detail)
+        return AssessmentIssue(
+            stage="image_triage",
+            detail="The images could not be pre-screened; the assessment ran "
+            "without confirming they show a usable vehicle.",
+        )
+    if not triage.shows_vehicle:
+        raise NotAVehicleError(triage.reason)
+    if not triage.usable:
+        raise UnusableImagesError(triage.reason)
+    return None
+
+
 async def _run_pipeline(
     request: AnalyzeRequest,
 ) -> AssessmentReport | VehicleConfirmNeeded:
+    triage_issue = await _triage(request.upload_id)
+
     # --- Vehicle identification ---
     if request.make and request.model and request.year:
         vehicle = Vehicle(
@@ -112,7 +146,8 @@ async def _run_pipeline(
         use_consensus=request.use_consensus,
     )
 
-    issues = [
+    issues = [triage_issue] if triage_issue else []
+    issues += [
         AssessmentIssue(
             stage="damage_detection",
             scope=zone,
