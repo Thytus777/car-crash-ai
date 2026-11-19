@@ -97,7 +97,9 @@ car-crash-ai/
 | `GET` | `/health` | Health check |
 | `POST` | `/api/v1/upload` | Upload vehicle images |
 | `POST` | `/api/v1/analyze` | Run full damage analysis |
-| `GET` | `/api/v1/estimate/{id}` | Get cost estimate by ID |
+| `GET` | `/api/v1/estimates` | List recent assessments |
+| `GET` | `/api/v1/estimates/{id}` | Get a saved assessment |
+| `GET` | `/api/v1/report/{id}` | Download the PDF report |
 
 ## Configuration
 

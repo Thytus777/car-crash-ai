@@ -97,3 +97,8 @@ async def test_unknown_upload_is_a_404_problem(client: AsyncClient) -> None:
 
     body = assert_problem(response, 404)
     assert body["detail"] == "Upload fedcba987654 not found"
+
+
+async def test_unimplemented_estimate_route_is_gone(client: AsyncClient) -> None:
+    """Regression for #11: /estimate/{id} always raised NotImplementedError (500)."""
+    assert_problem(await client.get("/api/v1/estimate/abc"), 404)

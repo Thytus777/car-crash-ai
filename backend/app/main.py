@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.limits import install_body_size_limit
 from app.api.problems import install_problem_handlers
-from app.api.routes import analysis, estimate, estimates, report, upload
+from app.api.routes import analysis, estimates, report, upload
 from app.core.config import settings
 from app.prompts import validate_prompts
 
@@ -27,7 +27,6 @@ app.add_middleware(
 
 app.include_router(upload.router, prefix="/api/v1", tags=["upload"])
 app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
-app.include_router(estimate.router, prefix="/api/v1", tags=["estimate"])
 app.include_router(estimates.router, prefix="/api/v1", tags=["history"])
 app.include_router(report.router, prefix="/api/v1", tags=["report"])
 
