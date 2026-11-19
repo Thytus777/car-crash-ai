@@ -46,9 +46,9 @@ def _load(version: str) -> tuple[dict[PromptName, Template], dict[str, str]]:
     return templates, partials
 
 
-def render(name: PromptName, **values: object) -> str:
-    """Render a prompt of the configured version; missing values raise KeyError."""
-    templates, partials = _load(settings.prompt_version)
+def render(name: PromptName, version: str | None = None, **values: object) -> str:
+    """Render a prompt (default: configured version). Missing values: KeyError."""
+    templates, partials = _load(version or settings.prompt_version)
     return templates[name].substitute(partials, **values)
 
 

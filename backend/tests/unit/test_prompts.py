@@ -2,7 +2,7 @@
 
 The golden files in tests/golden/prompts were rendered by the Python prompt
 constants these files replaced. Matching them byte for byte shows the move
-to files changed no prompt text.
+to files changed no prompt text. v2 differs from v1 only where intended.
 """
 
 from pathlib import Path
@@ -27,13 +27,14 @@ def test_every_prompt_exists_for_the_configured_version() -> None:
 
 
 def test_vehicle_identification_matches_golden() -> None:
-    assert render("vehicle_identification") == golden("vehicle_identification")
+    assert render("vehicle_identification", "v1") == golden("vehicle_identification")
 
 
 @pytest.mark.parametrize("zone", list(DAMAGE_ZONES))
 def test_damage_zone_matches_golden(zone: str) -> None:
     rendered = render(
         "damage_zone",
+        "v1",
         zone_upper=zone.upper(),
         component_list=", ".join(DAMAGE_ZONES[zone]),
     )
@@ -41,17 +42,20 @@ def test_damage_zone_matches_golden(zone: str) -> None:
 
 
 def test_damage_full_matches_golden() -> None:
-    rendered = render("damage_full", component_list=", ".join(STANDARD_COMPONENTS))
+    rendered = render(
+        "damage_full", "v1", component_list=", ".join(STANDARD_COMPONENTS)
+    )
     assert rendered == golden("damage_full")
 
 
 def test_price_prompts_match_golden() -> None:
     car = {"year": 2019, "make": "Toyota", "model": "Camry"}
-    assert render("price_estimation", component="front bumper", **car) == golden(
+    assert render("price_estimation", "v1", component="front bumper", **car) == golden(
         "price_estimation"
     )
     assert render(
         "price_extraction",
+        "v1",
         site_domain="parts.example",
         component="front bumper",
         cleaned_text="Bumper cover $289.99",
@@ -62,6 +66,7 @@ def test_price_prompts_match_golden() -> None:
 def test_sanity_check_matches_golden() -> None:
     rendered = render(
         "sanity_check",
+        "v1",
         year=2019,
         make="Toyota",
         model="Camry",
@@ -84,3 +89,22 @@ def test_unknown_prompt_version_fails_fast(monkeypatch: pytest.MonkeyPatch) -> N
             validate_prompts()
     finally:
         _load.cache_clear()
+
+
+def test_v2_only_fixes_the_vehicle_id_braces() -> None:
+    """v1 sent the vehicle-ID JSON example with doubled braces ({{ }})."""
+    v1, v2 = PROMPTS_ROOT / "v1", PROMPTS_ROOT / "v2"
+    changed = sorted(
+        p.name
+        for p in v1.glob("*.md")
+        if p.read_text(encoding="utf-8") != (v2 / p.name).read_text(encoding="utf-8")
+    )
+    assert changed == ["vehicle_identification.md"]
+    assert sorted(p.name for p in v2.glob("*.md")) == sorted(
+        p.name for p in v1.glob("*.md")
+    )
+
+    fixed = render("vehicle_identification", "v2")
+    assert "{{" not in fixed and fixed == render(
+        "vehicle_identification", "v1"
+    ).replace("{{", "{").replace("}}", "}")

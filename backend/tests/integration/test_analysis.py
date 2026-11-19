@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.db.session as db_session
+from app.core.config import settings
 from app.db.models import EstimateRecord, UploadSession
 from app.models.damage import DamageAssessment, DamageItem
 from app.models.estimate import CostEstimate
@@ -179,7 +180,7 @@ async def test_saved_estimate_round_trips_through_history_endpoints(
 async def test_every_report_records_the_prompt_version(client: AsyncClient) -> None:
     body = (await client.post("/api/v1/analyze", json=OVERRIDE_REQUEST)).json()
 
-    assert body["meta"]["prompt_version"] == "v1"
+    assert body["meta"]["prompt_version"] == settings.prompt_version
     assert body["meta"]["llm_calls"] == 0  # all model-backed stages are mocked
 
 
@@ -196,4 +197,4 @@ async def test_confirmation_response_also_records_the_prompt_version(
         ).json()
 
     assert body["status"] == "vehicle_confirmation_needed"
-    assert body["meta"]["prompt_version"] == "v1"
+    assert body["meta"]["prompt_version"] == settings.prompt_version
