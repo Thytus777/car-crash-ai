@@ -63,6 +63,13 @@ def _problem_response(
     )
 
 
+def problem_response_for(request: Request, exc: AppError) -> JSONResponse:
+    """Render an AppError outside the exception-handler path (e.g. middleware)."""
+    return _problem_response(
+        request, exc.status, exc.slug, exc.title, exc.detail, **exc.extensions
+    )
+
+
 async def _app_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
     if exc.status >= 500:

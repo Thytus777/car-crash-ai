@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     severity_replace_threshold: float = 0.3
 
     upload_dir: Path = Path("uploads")
-    max_upload_size_mb: int = 20
+    max_upload_size_mb: float = 20  # per file
+    max_upload_total_mb: float = 40  # all files in one request
     max_images_per_request: int = 10
     min_image_width: int = 640
     min_image_height: int = 480

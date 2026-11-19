@@ -26,6 +26,30 @@ class InvalidInputError(AppError):
     title = "Invalid input"
 
 
+class PayloadTooLargeError(AppError):
+    status = 413
+    slug = "payload-too-large"
+    title = "Upload too large"
+
+
+class UnsupportedMediaTypeError(AppError):
+    status = 415
+    slug = "unsupported-media-type"
+    title = "Unsupported image format"
+
+
+class NotAVehicleError(AppError):
+    status = 422
+    slug = "not-a-vehicle"
+    title = "No vehicle found in the images"
+
+
+class UnusableImagesError(AppError):
+    status = 422
+    slug = "unusable-images"
+    title = "Images can't be assessed"
+
+
 class NotFoundError(AppError):
     status = 404
     slug = "not-found"

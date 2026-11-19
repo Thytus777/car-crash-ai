@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.limits import install_body_size_limit
 from app.api.problems import install_problem_handlers
 from app.api.routes import analysis, estimate, estimates, report, upload
 from app.core.config import settings
@@ -14,6 +15,7 @@ app = FastAPI(
 
 validate_prompts()  # fail at startup, not on the first request
 install_problem_handlers(app)
+install_body_size_limit(app)
 
 app.add_middleware(
     CORSMiddleware,
