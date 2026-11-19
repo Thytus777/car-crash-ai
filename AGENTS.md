@@ -69,6 +69,8 @@ Trunk-based: `main` is always deployable and every change arrives by PR. The ful
 - Fill in the PR template. Link the issue (`Closes #N`). Squash-merge once CI is green, then delete the branch.
 - Commits and PRs carry the author's name only; add no AI co-author or "generated with" lines.
 
+API contract: `backend/openapi.json` is generated (`make openapi`) and committed. CI fails if it's stale, or if it changed against `main` without bumping `__version__` in `backend/app/__init__.py` (keep `pyproject.toml` in step). Tests also check that every path the Streamlit and Next.js clients call exists in the spec.
+
 Ask the maintainer before:
 - adding any paid service or changing the model provider
 - force-pushing or rewriting history on `main`

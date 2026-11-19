@@ -10,7 +10,7 @@ TEST    := $(RUN) --group demo pytest
 COV_MIN ?= 84
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lock-check lint format format-check typecheck test test-integration \
+.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check \
         test-all coverage eval run run-demo docker pre-commit clean
 
 help: ## List targets
@@ -47,6 +47,15 @@ test-all: ## All unit + integration tests
 
 coverage: ## Unit + integration with coverage gate; writes backend/coverage.xml
 	$(TEST) -m "unit or integration" --cov --cov-report=term --cov-report=xml --cov-fail-under=$(COV_MIN)
+
+openapi: ## Regenerate the committed OpenAPI contract (backend/openapi.json)
+	$(RUN) python scripts/openapi.py export
+
+openapi-check: ## Fail if backend/openapi.json is stale
+	$(RUN) python scripts/openapi.py check
+
+openapi-version-check: ## Fail if the contract changed vs BASE=<spec.json> without a version bump
+	$(RUN) python scripts/openapi.py check-version $(BASE)
 
 eval: ## Run the eval harness (Phase 3, issue #15)
 	@echo "Eval harness not implemented yet; tracked in #15." && exit 1
