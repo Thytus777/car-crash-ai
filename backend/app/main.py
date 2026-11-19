@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import __version__
 from app.api.limits import install_body_size_limit
 from app.api.problems import install_problem_handlers
 from app.api.routes import analysis, estimates, report, upload
@@ -10,7 +11,7 @@ from app.prompts import validate_prompts
 app = FastAPI(
     title="Car Crash AI",
     description="AI-powered vehicle damage detection and cost estimation",
-    version="0.1.0",
+    version=__version__,
 )
 
 validate_prompts()  # fail at startup, not on the first request

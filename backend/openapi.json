@@ -1,0 +1,1207 @@
+{
+  "components": {
+    "schemas": {
+      "AnalyzeRequest": {
+        "properties": {
+          "make": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override: vehicle make",
+            "title": "Make"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override: vehicle model",
+            "title": "Model"
+          },
+          "upload_id": {
+            "description": "Upload ID from /upload endpoint",
+            "pattern": "^[0-9a-f]{12}$",
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "use_consensus": {
+            "default": false,
+            "description": "Run both AI providers and merge results for higher confidence (slower, costs more)",
+            "title": "Use Consensus",
+            "type": "boolean"
+          },
+          "vin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional VIN for precise identification",
+            "title": "Vin"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override: vehicle year",
+            "title": "Year"
+          }
+        },
+        "required": [
+          "upload_id"
+        ],
+        "title": "AnalyzeRequest",
+        "type": "object"
+      },
+      "AngleGuidance": {
+        "properties": {
+          "angles_detected": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Angles Detected",
+            "type": "array"
+          },
+          "angles_missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Angles Missing",
+            "type": "array"
+          },
+          "suggestion": {
+            "default": "",
+            "title": "Suggestion",
+            "type": "string"
+          }
+        },
+        "title": "AngleGuidance",
+        "type": "object"
+      },
+      "AssessmentIssue": {
+        "description": "A stage that degraded without failing the whole request.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Zone or component affected, if any",
+            "title": "Scope"
+          },
+          "stage": {
+            "enum": [
+              "image_triage",
+              "damage_detection",
+              "pricing",
+              "sanity_check"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "detail"
+        ],
+        "title": "AssessmentIssue",
+        "type": "object"
+      },
+      "AssessmentMeta": {
+        "description": "How a result was produced; ties it to exact prompts and models.",
+        "properties": {
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "llm_calls": {
+            "default": 0,
+            "description": "Model calls made (provider attempts)",
+            "title": "Llm Calls",
+            "type": "integer"
+          },
+          "models": {
+            "description": "Distinct provider/model IDs that answered",
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "prompt_version": {
+            "title": "Prompt Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt_version"
+        ],
+        "title": "AssessmentMeta",
+        "type": "object"
+      },
+      "AssessmentReport": {
+        "properties": {
+          "assessment_warnings": {
+            "description": "Sanity-check flags — items the AI flagged as uncertain or inconsistent",
+            "items": {
+              "type": "string"
+            },
+            "title": "Assessment Warnings",
+            "type": "array"
+          },
+          "cost_estimates": {
+            "items": {
+              "$ref": "#/components/schemas/CostEstimate"
+            },
+            "title": "Cost Estimates",
+            "type": "array"
+          },
+          "damage_assessment": {
+            "$ref": "#/components/schemas/DamageAssessment"
+          },
+          "disclaimer": {
+            "default": "This is an estimate only, not a quote. Actual repair costs may vary based on local labor rates, parts availability, and shop assessment.",
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "estimate_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ID of the saved estimate (for /estimates and /report), or null if the result could not be saved",
+            "title": "Estimate Id"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "default": "complete",
+            "description": "'partial' when any stage degraded; see issues",
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/ReportTotals"
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/Vehicle"
+          }
+        },
+        "required": [
+          "vehicle",
+          "damage_assessment",
+          "totals"
+        ],
+        "title": "AssessmentReport",
+        "type": "object"
+      },
+      "Body_upload_images_api_v1_upload_post": {
+        "properties": {
+          "images": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Images",
+            "type": "array"
+          }
+        },
+        "required": [
+          "images"
+        ],
+        "title": "Body_upload_images_api_v1_upload_post",
+        "type": "object"
+      },
+      "CostEstimate": {
+        "properties": {
+          "component": {
+            "title": "Component",
+            "type": "string"
+          },
+          "labor_cost": {
+            "title": "Labor Cost",
+            "type": "string"
+          },
+          "labor_hours": {
+            "title": "Labor Hours",
+            "type": "string"
+          },
+          "labor_rate": {
+            "title": "Labor Rate",
+            "type": "string"
+          },
+          "part_cost_avg": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Cost Avg"
+          },
+          "part_cost_high": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Cost High"
+          },
+          "part_cost_low": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Cost Low"
+          },
+          "price_sources": {
+            "items": {
+              "$ref": "#/components/schemas/PriceResult"
+            },
+            "title": "Price Sources",
+            "type": "array"
+          },
+          "pricing_method": {
+            "default": "static_reference",
+            "enum": [
+              "live_search",
+              "static_reference",
+              "ai_estimate",
+              "unpriced"
+            ],
+            "title": "Pricing Method",
+            "type": "string"
+          },
+          "recommendation": {
+            "enum": [
+              "repair",
+              "replace"
+            ],
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "total_avg": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Avg"
+          },
+          "total_high": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total High"
+          },
+          "total_low": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Low"
+          }
+        },
+        "required": [
+          "component",
+          "recommendation",
+          "part_cost_low",
+          "part_cost_avg",
+          "part_cost_high",
+          "labor_hours",
+          "labor_rate",
+          "labor_cost",
+          "total_low",
+          "total_avg",
+          "total_high"
+        ],
+        "title": "CostEstimate",
+        "type": "object"
+      },
+      "DamageAssessment": {
+        "properties": {
+          "angle_guidance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AngleGuidance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Missing photo angles that would improve accuracy"
+          },
+          "assessment_method": {
+            "default": "single_pass",
+            "description": "Detection method used",
+            "enum": [
+              "single_pass",
+              "zone_pass",
+              "consensus"
+            ],
+            "title": "Assessment Method",
+            "type": "string"
+          },
+          "consensus_flags": {
+            "description": "Components where the two providers disagreed (consensus mode)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Consensus Flags",
+            "type": "array"
+          },
+          "damages": {
+            "description": "List of detected damages",
+            "items": {
+              "$ref": "#/components/schemas/DamageItem"
+            },
+            "title": "Damages",
+            "type": "array"
+          },
+          "failed_zones": {
+            "description": "Zones whose detection pass failed; their parts are unassessed",
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed Zones",
+            "type": "array"
+          },
+          "image_quality_warnings": {
+            "description": "Per-image quality issues detected before analysis",
+            "items": {
+              "$ref": "#/components/schemas/ImageQualityWarning"
+            },
+            "title": "Image Quality Warnings",
+            "type": "array"
+          }
+        },
+        "title": "DamageAssessment",
+        "type": "object"
+      },
+      "DamageItem": {
+        "properties": {
+          "component": {
+            "description": "Component name from standard list",
+            "title": "Component",
+            "type": "string"
+          },
+          "damage_type": {
+            "description": "Type of damage observed",
+            "enum": [
+              "scratch",
+              "dent",
+              "crack",
+              "shatter",
+              "crush",
+              "deformation",
+              "missing"
+            ],
+            "title": "Damage Type",
+            "type": "string"
+          },
+          "description": {
+            "description": "Brief description of the damage",
+            "title": "Description",
+            "type": "string"
+          },
+          "recommendation": {
+            "description": "Repair or replace recommendation",
+            "enum": [
+              "repair",
+              "replace"
+            ],
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "severity": {
+            "description": "Severity score (0.0 = no damage, 1.0 = destroyed)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Severity",
+            "type": "number"
+          }
+        },
+        "required": [
+          "component",
+          "damage_type",
+          "severity",
+          "description",
+          "recommendation"
+        ],
+        "title": "DamageItem",
+        "type": "object"
+      },
+      "ImageInfo": {
+        "properties": {
+          "file_size_bytes": {
+            "title": "File Size Bytes",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "image_id",
+          "original_filename",
+          "width",
+          "height",
+          "file_size_bytes"
+        ],
+        "title": "ImageInfo",
+        "type": "object"
+      },
+      "ImageQualityWarning": {
+        "properties": {
+          "image_filename": {
+            "title": "Image Filename",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "warning_type": {
+            "enum": [
+              "blurry",
+              "dark",
+              "overexposed",
+              "low_resolution"
+            ],
+            "title": "Warning Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_filename",
+          "warning_type",
+          "message"
+        ],
+        "title": "ImageQualityWarning",
+        "type": "object"
+      },
+      "PriceResult": {
+        "properties": {
+          "confidence": {
+            "default": 0.0,
+            "description": "Extraction confidence",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "currency": {
+            "default": "USD",
+            "description": "3-letter currency code",
+            "title": "Currency",
+            "type": "string"
+          },
+          "in_stock": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Availability",
+            "title": "In Stock"
+          },
+          "part_type": {
+            "default": "unknown",
+            "description": "OEM or aftermarket",
+            "enum": [
+              "oem",
+              "aftermarket",
+              "unknown"
+            ],
+            "title": "Part Type",
+            "type": "string"
+          },
+          "price": {
+            "description": "Part price",
+            "title": "Price",
+            "type": "string"
+          },
+          "product_name": {
+            "default": "",
+            "description": "Product name from source",
+            "title": "Product Name",
+            "type": "string"
+          },
+          "source_url": {
+            "default": "",
+            "description": "URL where price was found",
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "price"
+        ],
+        "title": "PriceResult",
+        "type": "object"
+      },
+      "Problem": {
+        "additionalProperties": true,
+        "description": "RFC 9457 problem document. Extra members carry problem-specific data.",
+        "properties": {
+          "detail": {
+            "description": "Explanation specific to this occurrence",
+            "title": "Detail",
+            "type": "string"
+          },
+          "instance": {
+            "description": "Request path that produced the problem",
+            "title": "Instance",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Short, human-readable summary of the type",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "URI identifying the problem type",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
+      "ReportTotals": {
+        "properties": {
+          "grand_total": {
+            "title": "Grand Total",
+            "type": "string"
+          },
+          "labor_total": {
+            "title": "Labor Total",
+            "type": "string"
+          },
+          "parts_total": {
+            "description": "Sum over priced components only",
+            "title": "Parts Total",
+            "type": "string"
+          },
+          "unpriced_components": {
+            "description": "Components with no part price; excluded from parts_total",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unpriced Components",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parts_total",
+          "labor_total",
+          "grand_total"
+        ],
+        "title": "ReportTotals",
+        "type": "object"
+      },
+      "UploadResponse": {
+        "properties": {
+          "image_count": {
+            "title": "Image Count",
+            "type": "integer"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageInfo"
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "quality_warnings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ImageQualityWarning"
+            },
+            "title": "Quality Warnings",
+            "type": "array"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "images",
+          "image_count"
+        ],
+        "title": "UploadResponse",
+        "type": "object"
+      },
+      "Vehicle": {
+        "properties": {
+          "body_style": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Body style (sedan, SUV, truck, coupe, hatchback, van, wagon)",
+            "title": "Body Style"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exterior color",
+            "title": "Color"
+          },
+          "confidence": {
+            "default": 1.0,
+            "description": "AI confidence in identification (0.0–1.0)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "make": {
+            "description": "Manufacturer (e.g. Toyota)",
+            "title": "Make",
+            "type": "string"
+          },
+          "model": {
+            "description": "Model name (e.g. Camry)",
+            "title": "Model",
+            "type": "string"
+          },
+          "trim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trim level (e.g. SE, XLE)",
+            "title": "Trim"
+          },
+          "vin": {
+            "anyOf": [
+              {
+                "maxLength": 17,
+                "minLength": 17,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "17-character Vehicle Identification Number (if provided)",
+            "title": "Vin"
+          },
+          "year": {
+            "description": "Model year",
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "make",
+          "model",
+          "year"
+        ],
+        "title": "Vehicle",
+        "type": "object"
+      },
+      "VehicleConfirmNeeded": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "default": "vehicle_confirmation_needed",
+            "title": "Status",
+            "type": "string"
+          },
+          "vehicle_guess": {
+            "$ref": "#/components/schemas/Vehicle"
+          }
+        },
+        "required": [
+          "vehicle_guess",
+          "message"
+        ],
+        "title": "VehicleConfirmNeeded",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "AI-powered vehicle damage detection and cost estimation",
+    "title": "Car Crash AI",
+    "version": "0.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/analyze": {
+      "post": {
+        "description": "Screens the images (422 not-a-vehicle / unusable-images), identifies the vehicle, detects damage per zone, prices each part and reviews the result. Degraded stages are listed in `issues` with `status: partial`.",
+        "operationId": "analyze_damage_api_v1_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AssessmentReport"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VehicleConfirmNeeded"
+                    }
+                  ],
+                  "title": "Response Analyze Damage Api V1 Analyze Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Run full damage analysis on uploaded images",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/estimates": {
+      "get": {
+        "operationId": "list_estimates_api_v1_estimates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Estimates Api V1 Estimates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List recent saved assessments (last 50)",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/api/v1/estimates/{estimate_id}": {
+      "get": {
+        "operationId": "get_estimate_api_v1_estimates__estimate_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "title": "Estimate Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Retrieve a saved assessment by ID",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/api/v1/report/{estimate_id}": {
+      "get": {
+        "operationId": "download_report_api_v1_report__estimate_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "title": "Estimate Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Download a PDF report for a saved estimate",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/v1/upload": {
+      "post": {
+        "operationId": "upload_images_api_v1_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_images_api_v1_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Bad Request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {}
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Upload vehicle images for damage assessment",
+        "tags": [
+          "upload"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Check Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    }
+  }
+}
