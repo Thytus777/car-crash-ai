@@ -123,7 +123,32 @@ jobs:
   docker-build:
     name: docker-build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: make docker
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image (multi-stage, non-root, digest-pinned bases)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          load: true
+          tags: car-crash-ai-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Image runs as non-root
+        run: test "$(docker run --rm --entrypoint id car-crash-ai-backend:ci -u)" = "10001"
+      - name: Vulnerability scan (Trivy, fixable HIGH/CRITICAL fail the build)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: car-crash-ai-backend:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: car-crash-ai-backend:ci
+          format: spdx-json
+          artifact-name: sbom-backend.spdx.json
+          upload-release-assets: false
