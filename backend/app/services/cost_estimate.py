@@ -35,9 +35,7 @@ async def estimate_cost(
         prices = [r.price for r in live_results]
         part_low = min(prices)
         part_high = max(prices)
-        part_avg = (sum(prices, Decimal("0")) / len(prices)).quantize(
-            Decimal("0.01")
-        )
+        part_avg = (sum(prices, Decimal("0")) / len(prices)).quantize(Decimal("0.01"))
         pricing_method = "live_search"
     else:
         static_price = lookup_static_price(
@@ -99,7 +97,13 @@ async def _ai_estimate_price(
         high = Decimal(str(data["price_high"])).quantize(Decimal("0.01"))
         logger.info(
             "AI price estimate for %s %s %d %s: $%s / $%s / $%s",
-            vehicle.make, vehicle.model, vehicle.year, component, low, avg, high,
+            vehicle.make,
+            vehicle.model,
+            vehicle.year,
+            component,
+            low,
+            avg,
+            high,
         )
         return low, avg, high
     except Exception:

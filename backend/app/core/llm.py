@@ -48,7 +48,10 @@ async def _retry(coro_factory, label: str):
             delay = _parse_retry_delay(exc)
             logger.warning(
                 "%s rate-limited (attempt %d/%d), retrying in %.0fs",
-                label, attempt + 1, _MAX_RETRIES + 1, delay,
+                label,
+                attempt + 1,
+                _MAX_RETRIES + 1,
+                delay,
             )
             await asyncio.sleep(delay)
     raise last_exc  # type: ignore[misc]
@@ -139,9 +142,7 @@ async def vision_completion(
                 "Gemini vision",
             )
         return await _retry(
-            lambda: _openai_vision(
-                prompt, images_b64, max_tokens, temperature, detail
-            ),
+            lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, detail),
             "OpenAI vision",
         )
     except Exception as primary_exc:
@@ -239,9 +240,7 @@ async def _gemini_vision(
     contents: list = [prompt]
     for img_b64 in images_b64:
         image_bytes = base64.b64decode(img_b64)
-        contents.append(
-            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-        )
+        contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
 
     model_name = settings.gemini_model
     config_kwargs: dict = {

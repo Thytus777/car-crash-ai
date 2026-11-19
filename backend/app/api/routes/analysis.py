@@ -117,9 +117,9 @@ async def analyze_damage(
     parts_total = sum(
         (c.part_cost_avg for c in cost_estimates), Decimal("0.00")
     ).quantize(Decimal("0.01"))
-    labor_total = sum(
-        (c.labor_cost for c in cost_estimates), Decimal("0.00")
-    ).quantize(Decimal("0.01"))
+    labor_total = sum((c.labor_cost for c in cost_estimates), Decimal("0.00")).quantize(
+        Decimal("0.01")
+    )
     grand_total = (parts_total + labor_total).quantize(Decimal("0.01"))
 
     report = AssessmentReport(

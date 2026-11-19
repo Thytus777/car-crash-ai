@@ -41,8 +41,7 @@ async def test_upload_single_image(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_upload_multiple_images(client: AsyncClient) -> None:
     files = [
-        ("images", (f"img{i}.jpg", _make_test_image(), "image/jpeg"))
-        for i in range(3)
+        ("images", (f"img{i}.jpg", _make_test_image(), "image/jpeg")) for i in range(3)
     ]
     response = await client.post("/api/v1/upload", files=files)
     assert response.status_code == 200

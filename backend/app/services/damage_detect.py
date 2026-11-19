@@ -89,9 +89,7 @@ def _parse_damage_response(raw_text: str) -> list[DamageItem]:
         severity = float(entry.get("severity", 0.0))
         severity = max(0.0, min(1.0, severity))
         threshold = _get_threshold(component)
-        recommendation: Recommendation = (
-            "replace" if severity > threshold else "repair"
-        )
+        recommendation: Recommendation = "replace" if severity > threshold else "repair"
 
         items.append(
             DamageItem(
