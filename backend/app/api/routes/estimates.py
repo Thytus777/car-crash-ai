@@ -30,7 +30,8 @@ async def get_estimate(
     if record is None:
         raise HTTPException(status_code=404, detail=f"Estimate {estimate_id} not found")
 
-    return AssessmentReport.model_validate(json.loads(record.report_json))
+    report = AssessmentReport.model_validate(json.loads(record.report_json))
+    return report.model_copy(update={"estimate_id": record.id})
 
 
 @router.get(
