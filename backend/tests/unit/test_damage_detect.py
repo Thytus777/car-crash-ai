@@ -105,3 +105,30 @@ async def test_all_zones_failing_raises_instead_of_reporting_no_damage() -> None
         pytest.raises(LLMUnavailableError),
     ):
         await detect_damage("0123456789ab")
+
+
+async def test_consensus_disagreements_are_kept() -> None:
+    """Regression for #11: consensus flags were computed and thrown away."""
+    flags = ["hood: models disagreed on severity (0.20 vs 0.70)."]
+    with (
+        patch("app.services.damage_detect.load_images", return_value=[b"jpeg"]),
+        patch(
+            "app.services.consensus.detect_damage_consensus",
+            new_callable=AsyncMock,
+            return_value=([], flags),
+        ),
+    ):
+        result = await detect_damage("0123456789ab", use_consensus=True)
+
+    assert result.consensus_flags == flags
+
+
+def test_angle_guidance_does_not_claim_detected_angles() -> None:
+    """Regression for #11: 'angles_detected' was inferred from the image count."""
+    from app.services.image_proc import assess_angle_coverage
+
+    few, many = assess_angle_coverage(2), assess_angle_coverage(5)
+
+    assert few.angles_detected == [] and many.angles_detected == []
+    assert "at least 4 photos" in few.suggestion
+    assert many.suggestion == ""

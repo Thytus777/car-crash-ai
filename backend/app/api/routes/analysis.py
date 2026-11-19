@@ -223,7 +223,7 @@ async def _run_pipeline(
                 "estimate as unreviewed.",
             )
         )
-    report.assessment_warnings = warnings or []
+    report.assessment_warnings = damage_assessment.consensus_flags + (warnings or [])
     report.issues = issues
     report.status = "partial" if issues else "complete"
 

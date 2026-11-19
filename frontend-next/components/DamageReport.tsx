@@ -80,7 +80,7 @@ export default function DamageReport({ report, estimateId, onReset }: Props) {
       )}
 
       {/* Angle guidance */}
-      {damage_assessment.angle_guidance?.angles_missing.length ? (
+      {damage_assessment.angle_guidance?.suggestion ? (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
           📷 {damage_assessment.angle_guidance.suggestion}
         </div>

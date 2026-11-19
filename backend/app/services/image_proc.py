@@ -3,6 +3,7 @@
 Validates, resizes, stores, and quality-checks uploaded images.
 """
 
+import json
 import re
 import statistics
 import uuid
@@ -179,6 +180,9 @@ async def process_upload(
             )
         )
 
+    (upload_dir / _QUALITY_FILE).write_text(
+        json.dumps([w.model_dump() for w in all_warnings])
+    )
     return upload_id, results, all_warnings
 
 
@@ -241,28 +245,30 @@ def check_image_quality(
 
 
 def assess_angle_coverage(image_count: int) -> AngleGuidance:
-    """
-    Heuristic: if fewer than 4 images were uploaded we assume some angles
-    are missing. Without per-image angle classification (needs YOLO) we
-    can only guess based on count.
-    """
-    if image_count >= 4:
-        return AngleGuidance(
-            angles_detected=EXPECTED_ANGLES,
-            angles_missing=[],
-            suggestion="",
-        )
+    """Suggest more photos when there are fewer than the four standard views.
 
-    detected = EXPECTED_ANGLES[:image_count]
-    missing = EXPECTED_ANGLES[image_count:]
+    Which angles were actually photographed isn't detected (that needs a
+    per-image classifier), so this never reports detected or missing angles.
+    """
+    if image_count >= len(EXPECTED_ANGLES):
+        return AngleGuidance()
     return AngleGuidance(
-        angles_detected=detected,
-        angles_missing=missing,
         suggestion=(
-            f"Upload at least 4 photos ({', '.join(EXPECTED_ANGLES)}) "
-            f"for the most accurate assessment. Missing: {', '.join(missing)}."
-        ),
+            f"Only {image_count} photo(s) uploaded. Upload at least 4 photos "
+            f"({', '.join(EXPECTED_ANGLES)}) for the most accurate assessment."
+        )
     )
+
+
+_QUALITY_FILE = "quality.json"
+
+
+def load_quality_warnings(upload_id: str) -> list[ImageQualityWarning]:
+    """Quality warnings computed at upload time (empty if none were saved)."""
+    path = _upload_path(upload_id) / _QUALITY_FILE
+    if not path.is_file():
+        return []
+    return [ImageQualityWarning.model_validate(w) for w in json.loads(path.read_text())]
 
 
 def load_images(upload_id: str) -> list[bytes]:

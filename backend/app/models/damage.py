@@ -132,6 +132,10 @@ class DamageAssessment(BaseModel):
     angle_guidance: AngleGuidance | None = Field(
         default=None, description="Missing photo angles that would improve accuracy"
     )
+    consensus_flags: list[str] = Field(
+        default_factory=list,
+        description="Components where the two providers disagreed (consensus mode)",
+    )
     failed_zones: list[str] = Field(
         default_factory=list,
         description="Zones whose detection pass failed; their parts are unassessed",
