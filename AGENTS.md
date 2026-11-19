@@ -52,6 +52,7 @@ Gotchas:
 - **Failures:** a stage that degrades reports it rather than guessing. Services catch only `AppError`s, typed LLM errors included: a failed zone goes in `DamageAssessment.failed_zones`, a part with no price gets `pricing_method="unpriced"` with null costs, and a failed sanity check returns `None`. The route turns these into `AssessmentReport.issues` with `status="partial"`. When nothing usable is left, e.g. every zone failed, the error propagates and becomes a 5xx problem. Never substitute a default value for a failed model call.
 - **Logging:** use `logging.getLogger(__name__)` and pass structured fields with `extra={...}`. Lines are JSON and carry the request ID automatically. Never log images, prompts, raw model output or secrets.
 - **Tracing:** wrap a new pipeline stage with `@traced("stage.<name>")` from `app/core/tracing.py`. Model calls are traced inside `llm.py`. Spans export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; `docker compose up` sends them to the collector and Jaeger at http://localhost:16686.
+- **Metrics:** define new series in `app/core/metrics.py` with low-cardinality labels only (route templates, provider, model, task, fixed outcome sets; never IDs or raw paths). SLO queries in `docs/SLO.md` depend on the existing names.
 - **Secrets:** they come from the environment only (`backend/.env` locally, CI secrets in Actions). `.env.example` files hold the variable names.
 
 ## Testing

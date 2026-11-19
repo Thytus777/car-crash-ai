@@ -1,6 +1,7 @@
 """Request IDs, access logs, and liveness/readiness endpoints."""
 
 import asyncio
+import functools
 import logging
 import re
 import tempfile
@@ -9,7 +10,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -17,6 +19,7 @@ import app.db.session as db_session
 from app.core.config import settings
 from app.core.llm import _api_key
 from app.core.logging import request_id_var
+from app.core.metrics import HTTP_DURATION, HTTP_REQUESTS
 from app.prompts import validate_prompts
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -24,6 +27,27 @@ _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 _access_log = logging.getLogger("app.access")
 
 router = APIRouter(tags=["health"])
+
+
+_EXTRA_ROUTES = ("/metrics",)  # served but not in the OpenAPI schema
+
+
+@functools.cache
+def _route_patterns(app: FastAPI) -> tuple[tuple[re.Pattern[str], str], ...]:
+    """Path templates from the app's own OpenAPI document, most specific first."""
+    templates = [*app.openapi()["paths"], *_EXTRA_ROUTES]
+    return tuple(
+        (re.compile(re.sub(r"\{[^}]+\}", "[^/]+", t) + "$"), t)
+        for t in sorted(templates, key=lambda t: (t.count("{"), -len(t)))
+    )
+
+
+def _route_template(request: Request) -> str:
+    """Metric label for a request: its route template, or 'unmatched'."""
+    for pattern, template in _route_patterns(request.app):
+        if pattern.match(request.url.path):
+            return template
+    return "unmatched"
 
 
 def install_request_context(app: FastAPI) -> None:
@@ -44,6 +68,11 @@ def install_request_context(app: FastAPI) -> None:
             response.headers[REQUEST_ID_HEADER] = request_id
             return response
         finally:
+            duration = time.perf_counter() - started
+            # Route template, not the raw path, keeps label cardinality bounded.
+            route = _route_template(request)
+            HTTP_REQUESTS.labels(route, request.method, str(status)).inc()
+            HTTP_DURATION.labels(route, request.method).observe(duration)
             _access_log.info(
                 "%s %s %d",
                 request.method,
@@ -54,7 +83,7 @@ def install_request_context(app: FastAPI) -> None:
                     "method": request.method,
                     "path": request.url.path,
                     "status": status,
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "duration_ms": round(duration * 1000, 1),
                 },
             )
             request_id_var.reset(token)
@@ -68,6 +97,12 @@ class Check(BaseModel):
 class Readiness(BaseModel):
     status: str  # ready | degraded | not_ready
     checks: dict[str, Check]
+
+
+@router.get("/metrics", include_in_schema=False)
+async def metrics() -> PlainTextResponse:
+    """Prometheus exposition. Not part of the public API contract."""
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/healthz", summary="Liveness: the process is up")

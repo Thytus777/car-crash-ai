@@ -50,6 +50,7 @@ from app.core.errors import (
     UpstreamTimeoutError,
     UpstreamUnavailableError,
 )
+from app.core.metrics import LLM_CALLS, LLM_DURATION, LLM_TOKENS
 from app.core.tracing import (
     GEN_AI_INPUT_TOKENS,
     GEN_AI_MODEL,
@@ -487,6 +488,17 @@ async def _call_provider[T: BaseModel](
             cached=attempts > 0 and cached_replies == attempts,
         )
         _log_call(call)
+        outcome = "ok" if ok else "failed"
+        LLM_CALLS.labels(
+            call.provider, call.model, call.task, outcome, str(call.cached).lower()
+        ).inc()
+        LLM_TOKENS.labels(call.provider, call.model, "input").inc(
+            call.usage.input_tokens
+        )
+        LLM_TOKENS.labels(call.provider, call.model, "output").inc(
+            call.usage.output_tokens
+        )
+        LLM_DURATION.labels(call.provider, call.task).observe(call.latency_s)
         trace.get_current_span().set_attributes(
             {
                 GEN_AI_SYSTEM: call.provider,
