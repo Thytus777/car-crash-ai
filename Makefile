@@ -7,10 +7,10 @@ RUN     := $(UV) run --directory $(BACKEND)
 # Tests also cover the Streamlit demo, so they need its dependency group.
 TEST    := $(RUN) --group demo pytest
 # Floor only ever goes up (issue #14 target of 80 reached).
-COV_MIN ?= 84
+COV_MIN ?= 86
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate \
+.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate eval-smoke eval-compare \
         test-all coverage eval run run-demo docker pre-commit clean
 
 help: ## List targets
@@ -60,8 +60,14 @@ openapi-version-check: ## Fail if the contract changed vs BASE=<spec.json> witho
 eval-validate: ## Check dataset labels, images and the manifest
 	$(RUN) python -m evals validate
 
-eval: ## Run the eval harness (Phase 3, issue #15)
-	@echo "Eval harness not implemented yet; tracked in #15." && exit 1
+eval: ## Run the full eval (cached model replies; add ARGS=--no-cache for live)
+	$(RUN) python -m evals run $(ARGS)
+
+eval-smoke: ## Run the smoke subset (the CI eval gate's cases)
+	$(RUN) python -m evals run --smoke $(ARGS)
+
+eval-compare: ## Compare two eval runs: make eval-compare BASE=a.json CANDIDATE=b.json
+	$(RUN) python -m evals compare $(abspath $(BASE)) $(abspath $(CANDIDATE))
 
 run: ## Start the API on :8000 with reload
 	$(RUN) uvicorn app.main:app --reload

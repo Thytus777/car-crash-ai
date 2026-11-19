@@ -57,7 +57,8 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def load_manifest(root: Path = DATASET_ROOT) -> Manifest:
+def load_manifest(root: Path | None = None) -> Manifest:
+    root = root or DATASET_ROOT
     return Manifest.model_validate_json((root / "manifest.json").read_text("utf-8"))
 
 
@@ -65,10 +66,9 @@ def _case_dirs(root: Path) -> Iterator[Path]:
     yield from sorted(p for p in root.iterdir() if p.is_dir())
 
 
-def load_cases(
-    root: Path = DATASET_ROOT, local_root: Path = LOCAL_IMAGES_ROOT
-) -> list[Case]:
+def load_cases(root: Path | None = None, local_root: Path | None = None) -> list[Case]:
     """Parse every case; raises if any label is invalid (run validate first)."""
+    root, local_root = root or DATASET_ROOT, local_root or LOCAL_IMAGES_ROOT
     return [
         Case(
             label=CaseLabel.model_validate_json((d / "label.json").read_text("utf-8")),
@@ -79,8 +79,9 @@ def load_cases(
     ]
 
 
-def fingerprint(root: Path = DATASET_ROOT) -> str:
+def fingerprint(root: Path | None = None) -> str:
     """Content hash of the manifest and every label (not the images)."""
+    root = root or DATASET_ROOT
     digest = hashlib.sha256((root / "manifest.json").read_bytes())
     for d in _case_dirs(root):
         digest.update(d.name.encode())
@@ -89,8 +90,9 @@ def fingerprint(root: Path = DATASET_ROOT) -> str:
 
 
 def validate(
-    root: Path = DATASET_ROOT, local_root: Path = LOCAL_IMAGES_ROOT
+    root: Path | None = None, local_root: Path | None = None
 ) -> ValidationReport:
+    root, local_root = root or DATASET_ROOT, local_root or LOCAL_IMAGES_ROOT
     report = ValidationReport()
     try:
         manifest = load_manifest(root)
@@ -164,8 +166,9 @@ def _check_images(case: Case, report: ValidationReport) -> None:
                     )
 
 
-def summary(root: Path = DATASET_ROOT) -> dict[str, object]:
+def summary(root: Path | None = None) -> dict[str, object]:
     """Small description for result files and the CLI."""
+    root = root or DATASET_ROOT
     cases = load_cases(root)
     return {
         "version": load_manifest(root).version,
