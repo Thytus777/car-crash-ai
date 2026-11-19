@@ -1,5 +1,6 @@
 """Live price search pipeline — Search API → Fetch → AI Extract → Aggregate."""
 
+import asyncio
 import logging
 from decimal import Decimal
 
@@ -80,30 +81,30 @@ async def _search_web(query: str) -> list[str]:
 async def _fetch_and_clean(
     urls: list[str],
 ) -> list[tuple[str, str]]:
-    """Fetch each URL and extract clean text. Returns [(domain, text), ...]."""
-    results: list[tuple[str, str]] = []
+    """Fetch URLs concurrently and extract clean text. Returns [(domain, text)]."""
+    limit = asyncio.Semaphore(settings.price_page_concurrency)
 
     async with httpx.AsyncClient(
         timeout=FETCH_TIMEOUT, follow_redirects=True
     ) as client:
-        for url in urls:
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
 
-                text = trafilatura.extract(response.text) or ""
-                if not text:
-                    continue
+        async def fetch(url: str) -> tuple[str, str] | None:
+            async with limit:
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                except httpx.HTTPError:
+                    logger.debug("Failed to fetch: %s", url, exc_info=True)
+                    return None
+            # HTML-to-text is CPU-bound; keep it off the event loop.
+            text = await asyncio.to_thread(trafilatura.extract, response.text) or ""
+            if not text:
+                return None
+            domain = url.split("/")[2] if "/" in url else url
+            return domain, text[:2000]
 
-                text = text[:2000]
-                domain = url.split("/")[2] if "/" in url else url
-                results.append((domain, text))
-
-            except Exception:
-                logger.debug("Failed to fetch: %s", url, exc_info=True)
-                continue
-
-    return results
+        pages = await asyncio.gather(*(fetch(url) for url in urls))
+    return [page for page in pages if page is not None]
 
 
 async def _extract_prices(
@@ -113,10 +114,10 @@ async def _extract_prices(
     year: int,
     component: str,
 ) -> list[PriceResult]:
-    """Use LLM to extract price data from each cleaned page snippet."""
-    results: list[PriceResult] = []
+    """Use the LLM to extract a price from each page, concurrently."""
+    limit = asyncio.Semaphore(settings.price_page_concurrency)
 
-    for domain, text in snippets:
+    async def extract(domain: str, text: str) -> PriceResult | None:
         prompt = render(
             "price_extraction",
             site_domain=domain,
@@ -126,32 +127,32 @@ async def _extract_prices(
             component=component.replace("_", " "),
             cleaned_text=text,
         )
-
-        try:
-            result = await generate(
-                PriceExtraction,
-                prompt,
-                task="price_extraction",
-                max_output_tokens=200,
-                temperature=0.1,
-            )
-        except AppError as exc:
-            # One page failing just means one fewer price sample.
-            logger.info("Price extraction failed for %s: %s", domain, exc.detail)
-            continue
+        async with limit:
+            try:
+                result = await generate(
+                    PriceExtraction,
+                    prompt,
+                    task="price_extraction",
+                    max_output_tokens=200,
+                    temperature=0.1,
+                )
+            except AppError as exc:
+                # One page failing just means one fewer price sample.
+                logger.info("Price extraction failed for %s: %s", domain, exc.detail)
+                return None
 
         extracted = result.output
-        if extracted.price is not None:
-            results.append(
-                PriceResult(
-                    price=Decimal(str(extracted.price)).quantize(Decimal("0.01")),
-                    currency=extracted.currency,
-                    part_type=extracted.part_type,
-                    in_stock=extracted.in_stock,
-                    product_name=extracted.product_name,
-                    source_url=f"https://{domain}",
-                    confidence=extracted.confidence,
-                )
-            )
+        if extracted.price is None:
+            return None
+        return PriceResult(
+            price=Decimal(str(extracted.price)).quantize(Decimal("0.01")),
+            currency=extracted.currency,
+            part_type=extracted.part_type,
+            in_stock=extracted.in_stock,
+            product_name=extracted.product_name,
+            source_url=f"https://{domain}",
+            confidence=extracted.confidence,
+        )
 
-    return results
+    results = await asyncio.gather(*(extract(d, t) for d, t in snippets))
+    return [r for r in results if r is not None]

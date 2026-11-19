@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from decimal import Decimal
 
@@ -14,6 +15,7 @@ from app.core.errors import (
 )
 from app.core.llm import record_llm_calls
 from app.db.repository import save_estimate
+from app.models.damage import DamageItem
 from app.models.estimate import (
     AssessmentIssue,
     AssessmentMeta,
@@ -158,10 +160,15 @@ async def _run_pipeline(
     ]
 
     # --- Cost estimation ---
-    cost_estimates: list[CostEstimate] = []
-    for damage_item in damage_assessment.damages:
-        cost = await estimate_cost(vehicle, damage_item)
-        cost_estimates.append(cost)
+    limit = asyncio.Semaphore(settings.pricing_concurrency)
+
+    async def price(item: DamageItem) -> CostEstimate:
+        async with limit:
+            return await estimate_cost(vehicle, item)
+
+    cost_estimates = list(
+        await asyncio.gather(*(price(d) for d in damage_assessment.damages))
+    )
 
     unpriced = [c.component for c in cost_estimates if c.part_cost_avg is None]
     issues.extend(

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     serpapi_key: str = ""
 
     labor_rate_per_hour: float = 75.00
+    pricing_concurrency: int = 4  # damaged components priced at once
+    price_page_concurrency: int = 5  # pages fetched/extracted at once per part
+    price_search_deadline_s: float = 20.0  # then fall back to static/AI price
     price_cache_ttl_hours: int = 24
     severity_replace_threshold: float = 0.3
 
