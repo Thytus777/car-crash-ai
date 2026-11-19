@@ -11,7 +11,7 @@ COV_MIN ?= 86
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate eval-smoke eval-compare \
-        test-all coverage eval run run-demo docker pre-commit clean label loadtest models
+        test-all coverage eval run run-demo docker pre-commit clean label loadtest models audit bandit security
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n",$$1,$$2}'
@@ -84,6 +84,16 @@ loadtest: ## Locust load test with simulated model latency (ARGS="--users 20 --d
 
 models: ## Fetch the sha256-pinned redaction models into backend/models/
 	$(RUN) python scripts/fetch_models.py
+
+audit: ## pip-audit the locked runtime dependencies (known CVEs)
+	$(UV) export --directory $(BACKEND) --frozen --no-dev --no-hashes --no-emit-project --format requirements-txt -q -o .audit-requirements.txt
+	$(RUN) pip-audit --requirement .audit-requirements.txt --progress-spinner off --strict
+	rm -f $(BACKEND)/.audit-requirements.txt
+
+bandit: ## Static security analysis of the backend package
+	$(RUN) bandit -c pyproject.toml -r app -q
+
+security: audit bandit ## All dependency and code security checks
 
 docker: ## Build the backend image
 	docker build -t car-crash-ai-backend:local $(BACKEND)
