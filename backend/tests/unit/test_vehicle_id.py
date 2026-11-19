@@ -1,84 +1,57 @@
-import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
-from app.services.vehicle_id import (
-    _parse_vehicle_response,
-    identify_vehicle,
-    needs_user_input,
-)
+from app.models.llm_outputs import VehicleIdentification
+from app.models.vehicle import Vehicle
+from app.services.vehicle_id import identify_vehicle, needs_user_input, to_vehicle
+from tests.llm_fakes import llm_result
 
 
-def test_parse_valid_json() -> None:
-    raw = json.dumps(
-        {
-            "make": "Toyota",
-            "model": "Camry",
-            "year": 2020,
-            "body_style": "sedan",
-            "color": "white",
-            "confidence": 0.92,
-        }
-    )
-    vehicle = _parse_vehicle_response(raw)
-    assert vehicle.make == "Toyota"
-    assert vehicle.model == "Camry"
-    assert vehicle.year == 2020
-    assert vehicle.confidence == 0.92
+def _identified(**overrides: object) -> VehicleIdentification:
+    fields: dict[str, object] = {
+        "make": "Ford",
+        "model": "Mustang",
+        "year": 2022,
+        "body_style": "coupe",
+        "color": "red",
+        "confidence": 0.95,
+    }
+    fields.update(overrides)
+    return VehicleIdentification.model_validate(fields)
 
 
-def test_parse_json_with_code_fences() -> None:
-    raw = (
-        '```json\n{"make": "Honda", "model": "Civic", '
-        '"year": 2019, "confidence": 0.85}\n```'
-    )
-    vehicle = _parse_vehicle_response(raw)
-    assert vehicle.make == "Honda"
-    assert vehicle.year == 2019
+def test_to_vehicle_maps_fields() -> None:
+    vehicle = to_vehicle(_identified())
+
+    assert (vehicle.make, vehicle.model, vehicle.year) == ("Ford", "Mustang", 2022)
+    assert vehicle.confidence == 0.95
+
+
+def test_to_vehicle_unknown_year_becomes_zero() -> None:
+    assert to_vehicle(_identified(year=None)).year == 0
 
 
 def test_needs_user_input_low_confidence() -> None:
-    from app.models.vehicle import Vehicle
-
     v = Vehicle(make="Unknown", model="Unknown", year=0, confidence=0.4)
     assert needs_user_input(v) is True
 
 
 def test_needs_user_input_high_confidence() -> None:
-    from app.models.vehicle import Vehicle
-
     v = Vehicle(make="Toyota", model="Camry", year=2020, confidence=0.9)
     assert needs_user_input(v) is False
 
 
-@pytest.mark.asyncio
-async def test_identify_vehicle_calls_llm() -> None:
-    llm_response = json.dumps(
-        {
-            "make": "Ford",
-            "model": "Mustang",
-            "year": 2022,
-            "body_style": "coupe",
-            "color": "red",
-            "confidence": 0.95,
-        }
-    )
-
+async def test_identify_vehicle_requests_typed_output_with_low_detail() -> None:
     with (
+        patch("app.services.vehicle_id.load_images", return_value=[b"jpeg"]),
         patch(
-            "app.services.vehicle_id.load_images_as_base64",
-            return_value=["fake_base64"],
-        ),
-        patch(
-            "app.services.vehicle_id.vision_completion",
+            "app.services.vehicle_id.generate",
             new_callable=AsyncMock,
-            return_value=llm_response,
-        ),
+            return_value=llm_result(_identified()),
+        ) as generate,
     ):
-        vehicle = await identify_vehicle("test_upload_id")
+        vehicle = await identify_vehicle("0123456789ab")
 
-    assert vehicle.make == "Ford"
-    assert vehicle.model == "Mustang"
-    assert vehicle.year == 2022
-    assert vehicle.confidence == 0.95
+    assert vehicle.make == "Ford" and vehicle.confidence == 0.95
+    args, kwargs = generate.call_args
+    assert args[0] is VehicleIdentification and args[2] == [b"jpeg"]
+    assert kwargs["image_detail"] == "low"

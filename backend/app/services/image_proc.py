@@ -3,7 +3,6 @@
 Validates, resizes, stores, and quality-checks uploaded images.
 """
 
-import base64
 import re
 import statistics
 import uuid
@@ -235,15 +234,10 @@ def assess_angle_coverage(image_count: int) -> AngleGuidance:
     )
 
 
-def load_images_as_base64(upload_id: str) -> list[str]:
-    """Load all processed images for an upload as base64 strings for LLM API."""
+def load_images(upload_id: str) -> list[bytes]:
+    """Load all processed (JPEG) images for an upload, in a stable order."""
     upload_dir = _upload_path(upload_id)
     if not upload_dir.exists():
         raise NotFoundError(f"Upload {upload_id} not found")
 
-    images_b64: list[str] = []
-    for img_path in sorted(upload_dir.glob("*.jpg")):
-        with open(img_path, "rb") as f:
-            images_b64.append(base64.b64encode(f.read()).decode("utf-8"))
-
-    return images_b64
+    return [path.read_bytes() for path in sorted(upload_dir.glob("*.jpg"))]

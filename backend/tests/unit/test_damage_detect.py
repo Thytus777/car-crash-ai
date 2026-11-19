@@ -1,124 +1,73 @@
-import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
+from app.models.llm_outputs import DamageFinding, DamageFindings
+from app.services.damage_detect import detect_damage, to_damage_items
+from tests.llm_fakes import llm_result
 
-from app.services.damage_detect import _parse_damage_response, detect_damage
 
-
-def test_parse_valid_damage_response() -> None:
-    raw = json.dumps(
-        [
-            {
-                "component": "front_bumper",
-                "damage_type": "crush",
-                "severity": 0.75,
-                "description": "Crushed inward with cracking",
-            },
-            {
-                "component": "headlight_left",
-                "damage_type": "shatter",
-                "severity": 0.9,
-                "description": "Shattered lens",
-            },
-        ]
+def _finding(
+    component: str, severity: float, damage_type: str = "dent"
+) -> DamageFinding:
+    return DamageFinding.model_validate(
+        {
+            "component": component,
+            "damage_type": damage_type,
+            "severity": severity,
+            "description": "test",
+        }
     )
-    items = _parse_damage_response(raw)
-    assert len(items) == 2
-    assert items[0].component == "front_bumper"
-    assert items[0].severity == 0.75
-    assert items[0].recommendation == "replace"
-    assert items[1].recommendation == "replace"
 
 
-def test_parse_low_severity_gets_repair() -> None:
-    raw = json.dumps(
-        [
-            {
-                "component": "door_front_left",
-                "damage_type": "scratch",
-                "severity": 0.15,
-                "description": "Light scratch on paint",
-            },
-        ]
+def test_high_severity_gets_replace() -> None:
+    items = to_damage_items(
+        [_finding("front_bumper", 0.75, "crush"), _finding("headlight_left", 0.9)]
     )
-    items = _parse_damage_response(raw)
+
+    assert [i.recommendation for i in items] == ["replace", "replace"]
+    assert items[0].component == "front_bumper" and items[0].severity == 0.75
+
+
+def test_low_severity_gets_repair() -> None:
+    items = to_damage_items([_finding("door_front_left", 0.15, "scratch")])
+
     assert items[0].recommendation == "repair"
 
 
-def test_parse_unknown_component_skipped() -> None:
-    raw = json.dumps(
+def test_structural_parts_use_lower_replace_threshold() -> None:
+    # 0.25 is below the default 0.3 but above the A-pillar's 0.2 threshold.
+    pillar, door = to_damage_items(
+        [_finding("a_pillar_left", 0.25), _finding("door_front_left", 0.25)]
+    )
+
+    assert pillar.recommendation == "replace"
+    assert door.recommendation == "repair"
+
+
+async def test_detect_damage_merges_zone_passes_keeping_worst_severity() -> None:
+    zone_outputs = iter(
         [
-            {
-                "component": "imaginary_part",
-                "damage_type": "dent",
-                "severity": 0.5,
-                "description": "Test",
-            },
-            {
-                "component": "hood",
-                "damage_type": "dent",
-                "severity": 0.4,
-                "description": "Dented hood",
-            },
+            DamageFindings(damages=[_finding("hood", 0.4)]),
+            DamageFindings(damages=[_finding("rear_bumper", 0.65, "deformation")]),
+            DamageFindings(damages=[_finding("hood", 0.7)]),
         ]
     )
-    items = _parse_damage_response(raw)
-    assert len(items) == 1
-    assert items[0].component == "hood"
 
-
-def test_parse_severity_clamped() -> None:
-    raw = json.dumps(
-        [
-            {
-                "component": "roof",
-                "damage_type": "crush",
-                "severity": 1.5,
-                "description": "Over max",
-            },
-        ]
-    )
-    items = _parse_damage_response(raw)
-    assert items[0].severity == 1.0
-
-
-def test_parse_with_code_fences() -> None:
-    raw = (
-        '```json\n[{"component": "grille", "damage_type": "crack", '
-        '"severity": 0.6, "description": "Cracked"}]\n```'
-    )
-    items = _parse_damage_response(raw)
-    assert len(items) == 1
-    assert items[0].component == "grille"
-
-
-@pytest.mark.asyncio
-async def test_detect_damage_calls_llm() -> None:
-    llm_response = json.dumps(
-        [
-            {
-                "component": "rear_bumper",
-                "damage_type": "deformation",
-                "severity": 0.65,
-                "description": "Rear bumper pushed in",
-            }
-        ]
-    )
+    async def fake_generate(*_: object, **__: object) -> object:
+        return llm_result(next(zone_outputs))
 
     with (
+        patch("app.services.damage_detect.load_images", return_value=[b"jpeg"]),
         patch(
-            "app.services.damage_detect.load_images_as_base64",
-            return_value=["fake_b64"],
-        ),
-        patch(
-            "app.services.damage_detect.vision_completion",
+            "app.services.damage_detect.generate",
             new_callable=AsyncMock,
-            return_value=llm_response,
-        ),
+            side_effect=fake_generate,
+        ) as generate,
     ):
-        result = await detect_damage("test_upload_id")
+        result = await detect_damage("0123456789ab")
 
-    assert len(result.damages) == 1
-    assert result.damages[0].component == "rear_bumper"
-    assert result.damages[0].recommendation == "replace"
+    assert generate.await_count == 3
+    assert [(d.component, d.severity) for d in result.damages] == [
+        ("hood", 0.7),
+        ("rear_bumper", 0.65),
+    ]
+    assert result.assessment_method == "zone_pass"

@@ -5,7 +5,7 @@ UV      ?= uv
 BACKEND := backend
 RUN     := $(UV) run --directory $(BACKEND)
 # Floor only ever goes up. Target is 80 (see issue #14).
-COV_MIN ?= 59
+COV_MIN ?= 75
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lock-check lint format format-check typecheck test test-integration \

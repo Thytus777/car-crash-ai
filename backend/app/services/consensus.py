@@ -7,10 +7,12 @@ the final report can surface that to the user.
 """
 
 import logging
+from collections.abc import Sequence
 
-from app.core.llm import dual_vision_completion
+from app.core.llm import generate_both
 from app.models.damage import DamageItem, Recommendation
-from app.services.damage_detect import COMPONENT_THRESHOLDS, _parse_damage_response
+from app.models.llm_outputs import DamageFindings
+from app.services.damage_detect import COMPONENT_THRESHOLDS, to_damage_items
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ DIVERGENCE_THRESHOLD = 0.25
 
 async def detect_damage_consensus(
     prompt: str,
-    images_b64: list[str],
+    images: Sequence[bytes],
 ) -> tuple[list[DamageItem], list[str]]:
     """Run damage detection with both providers and merge results.
 
@@ -29,23 +31,22 @@ async def detect_damage_consensus(
         uncertainty_flags is a list of human-readable strings for components
         where the two models disagreed significantly.
     """
-    primary_raw, secondary_raw = await dual_vision_completion(
-        prompt=prompt,
-        images_b64=images_b64,
-        max_tokens=2000,
+    primary, secondary = await generate_both(
+        DamageFindings,
+        prompt,
+        images,
+        task="damage_consensus",
+        max_output_tokens=2000,
         temperature=0.2,
     )
+    primary_items = to_damage_items(primary.output.damages)
 
-    primary_items = _parse_damage_response(primary_raw)
-
-    if secondary_raw is None:
+    if secondary is None:
         logger.info("Consensus: only one provider available, using single result")
         return primary_items, []
 
-    secondary_items = _parse_damage_response(secondary_raw)
-
-    merged, flags = _merge_assessments(primary_items, secondary_items)
-    return merged, flags
+    secondary_items = to_damage_items(secondary.output.damages)
+    return _merge_assessments(primary_items, secondary_items)
 
 
 def _merge_assessments(
