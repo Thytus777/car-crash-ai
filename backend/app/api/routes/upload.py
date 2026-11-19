@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
+from app.api.problems import problem_responses
 from app.models.damage import ImageQualityWarning
-from app.services.image_proc import ImageValidationError, process_upload
+from app.services.image_proc import process_upload
 
 router = APIRouter()
 
@@ -26,6 +27,7 @@ class UploadResponse(BaseModel):
     "/upload",
     response_model=UploadResponse,
     summary="Upload vehicle images for damage assessment",
+    responses=problem_responses(400, 422),
 )
 async def upload_images(images: list[UploadFile]) -> UploadResponse:
     files: list[tuple[str, bytes, str]] = []
@@ -35,10 +37,7 @@ async def upload_images(images: list[UploadFile]) -> UploadResponse:
             (img_file.filename or "unknown", data, img_file.content_type or "")
         )
 
-    try:
-        upload_id, processed, quality_warnings = await process_upload(files)
-    except ImageValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    upload_id, processed, quality_warnings = await process_upload(files)
 
     return UploadResponse(
         upload_id=upload_id,

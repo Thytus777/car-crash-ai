@@ -13,6 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageStat
 
 from app.core.config import settings
+from app.core.errors import InvalidInputError, NotFoundError
 from app.models.damage import AngleGuidance, ImageQualityWarning
 
 # Quality thresholds
@@ -32,7 +33,7 @@ UPLOAD_ID_PATTERN = r"^[0-9a-f]{12}$"
 _UPLOAD_ID_RE = re.compile(UPLOAD_ID_PATTERN)
 
 
-class ImageValidationError(Exception):
+class ImageValidationError(InvalidInputError):
     pass
 
 
@@ -41,7 +42,7 @@ def _upload_path(upload_id: str) -> Path:
     root = settings.upload_dir.resolve()
     path = (root / upload_id).resolve()
     if not _UPLOAD_ID_RE.fullmatch(upload_id) or path.parent != root:
-        raise ValueError(f"Invalid upload_id: {upload_id!r}")
+        raise InvalidInputError(f"Invalid upload_id: {upload_id!r}")
     return path
 
 
@@ -238,7 +239,7 @@ def load_images_as_base64(upload_id: str) -> list[str]:
     """Load all processed images for an upload as base64 strings for LLM API."""
     upload_dir = _upload_path(upload_id)
     if not upload_dir.exists():
-        raise FileNotFoundError(f"Upload {upload_id} not found")
+        raise NotFoundError(f"Upload {upload_id} not found")
 
     images_b64: list[str] = []
     for img_path in sorted(upload_dir.glob("*.jpg")):

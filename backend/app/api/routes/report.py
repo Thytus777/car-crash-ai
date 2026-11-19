@@ -2,11 +2,13 @@
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.problems import problem_responses
+from app.core.errors import NotFoundError
 from app.db.models import EstimateRecord
 from app.db.session import get_db
 from app.models.estimate import AssessmentReport
@@ -18,6 +20,7 @@ router = APIRouter()
 @router.get(
     "/report/{estimate_id}",
     summary="Download a PDF report for a saved estimate",
+    responses=problem_responses(404, 422),
     response_class=Response,
 )
 async def download_report(
@@ -29,7 +32,7 @@ async def download_report(
     )
     record = result.scalar_one_or_none()
     if record is None:
-        raise HTTPException(status_code=404, detail=f"Estimate {estimate_id} not found")
+        raise NotFoundError(f"Estimate {estimate_id} not found")
 
     report = AssessmentReport.model_validate(json.loads(record.report_json))
     pdf_bytes = generate_pdf(

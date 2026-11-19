@@ -3,6 +3,7 @@
 import json
 import logging
 
+from app.core.errors import NotFoundError
 from app.core.llm import vision_completion
 from app.models.vehicle import Vehicle
 from app.prompts.vehicle_identification import VEHICLE_ID_PROMPT
@@ -21,7 +22,7 @@ async def identify_vehicle(upload_id: str) -> Vehicle:
     """
     images_b64 = load_images_as_base64(upload_id)
     if not images_b64:
-        raise ValueError(f"No images found for upload {upload_id}")
+        raise NotFoundError(f"Upload {upload_id} has no images")
 
     raw_text = await vision_completion(
         prompt=VEHICLE_ID_PROMPT,

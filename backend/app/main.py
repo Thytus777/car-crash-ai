@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.problems import install_problem_handlers
 from app.api.routes import analysis, estimate, estimates, report, upload
 from app.core.config import settings
 
@@ -9,6 +10,8 @@ app = FastAPI(
     description="AI-powered vehicle damage detection and cost estimation",
     version="0.1.0",
 )
+
+install_problem_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,

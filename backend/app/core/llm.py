@@ -5,6 +5,7 @@ import logging
 import re
 
 from app.core.config import settings
+from app.core.errors import UpstreamRateLimitedError
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ _MAX_RETRIES = 2
 _RETRY_BASE_DELAY = 10  # seconds
 
 
-class LLMRateLimitError(Exception):
+class LLMRateLimitError(UpstreamRateLimitedError):
     """Raised when all configured LLM providers are rate-limited."""
 
 
