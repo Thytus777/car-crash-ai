@@ -1,224 +1,76 @@
-# Agent Instructions
+# AGENTS.md
 
-This is a **FastAPI backend + Next.js frontend** for vehicle damage assessment. The standalone iOS app was retired (see `docs/adr/0001-retire-standalone-ios-app.md`, tag `archive/ios-standalone`).
+Car Crash AI: crash photos go in, a vision LLM identifies damaged components, and the backend returns a structured repair-cost estimate as validated JSON.
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+## Layout
 
----
+- `backend/`: FastAPI service, the only place model calls happen. A uv project (`pyproject.toml`, `uv.lock`).
+  - `app/api/routes/`: HTTP layer
+  - `app/services/`: pipeline stages
+  - `app/core/llm.py`: provider abstraction
+  - `app/prompts/`: prompt text
+  - `app/models/`: Pydantic schemas
+  - `app/db/`: SQLAlchemy + Alembic
+- `frontend-next/`: Next.js app, the primary client.
+- `frontend/streamlit_app.py`: internal demo and future labelling tool. Broken until #4.
+- `docs/adr/`: architecture decision records. Read the relevant one before reversing a decision, and add one (copy `0000-template.md`) for any decision a reviewer would ask "why?" about.
+- The standalone iOS app was retired (ADR 0001). The code is in tag `archive/ios-standalone`.
 
-## Git Branching Strategy
+## Request flow
 
-**Permanent branches:**
-- `main` — production-ready code only. Never commit directly. Merge from `develop` when a release is ready.
-- `develop` — integration branch. All feature branches merge here. Always deployable but not necessarily production-ready.
+`POST /api/v1/upload` validates, resizes and stores the images, then returns an `upload_id`. `POST /api/v1/analyze` then runs four stages:
 
-**Feature branches:**
-- Branch off `develop`: `git checkout -b feature/<short-name> develop`
-- One branch per feature/fix. Keep them small and focused.
-- Name format: `feature/<topic>` (e.g. `feature/phase1-database`, `feature/vin-decoder`)
-- Merge back to `develop` via PR (or locally) when the feature is complete and tests pass.
-- Delete the branch after merging.
+1. **Vehicle ID:** request override, then VIN (NHTSA), then vision LLM. If confidence is below 0.7 it returns `vehicle_confirmation_needed`.
+2. **Damage detection:** three zone prompts run in parallel (front, rear, side), or two-provider consensus.
+3. **Pricing per component:** live search (SerpAPI, then fetched pages, then LLM extraction), then the static CSV, then an LLM estimate.
+4. **Totals, an LLM sanity check, then persistence.**
 
-**Hotfix branches:**
-- Branch off `main`: `git checkout -b hotfix/<description> main`
-- Merge into both `main` AND `develop` after fix.
+All LLM traffic goes through `app/core/llm.py`.
 
-**Commit message format:**
-```
-<type>: <short description>
+## Commands
 
-Types: feat | fix | refactor | test | docs | chore | perf
-Examples:
-  feat: add zone-based damage detection prompts
-  fix: clamp severity scores from consensus outliers
-  docs: update TECHSTACK with database layer
-```
+`make help` lists every target. Run them from the repo root; CI calls the same targets. Day to day:
 
-**Release flow:**
-```
-feature/* → develop → (staging test) → main
-```
+- `make setup`: install deps and the git hooks (pre-commit plus commit-msg).
+- `make test`: unit suite, the inner loop.
+- `make coverage`: unit + integration with the CI coverage gate.
+- `make lint typecheck`: ruff, then mypy `--strict`.
 
----
+Gotchas:
+- Dependencies change only through `uv add` / `uv lock` in `backend/`. CI fails if `uv.lock` disagrees with `pyproject.toml`.
+- On Windows, `make` comes from `winget install ezwinports.make`.
+- `tests/integration/test_analysis.py::test_analyze_with_vehicle_override` is a strict xfail tied to #1. Remove the marker in the PR that fixes #1.
 
-## Issue Tracking (beads)
+## Conventions
 
-This project uses **bd (beads)** for issue tracking. Install it first:
-```bash
-pip install beads   # or: check https://github.com/steveyegge/beads for install
-bd onboard
-```
-Until installed, use the Claude Code task list (`TaskCreate`) as a session-local proxy.
+- **Schemas:** Pydantic v2 models for every request, response and LLM output. Money is `Decimal` with 2 places. Severity is a float in `[0, 1]`. Component names come from `STANDARD_COMPONENTS` in `app/models/damage.py`.
+- **Types:** the backend passes mypy `--strict`. The narrow override for `app.core.llm` exists only until #6 lands.
+- **Model calls:** every model call goes through `app/core/llm.py`, and its prompt text lives under `app/prompts/`.
+- **Failures:** a stage that fails reports the failure in the response. Silent fallbacks (empty damage lists, default prices) are the bug class tracked in #3.
+- **Secrets:** they come from the environment only (`backend/.env` locally, CI secrets in Actions). `.env.example` files hold the variable names.
 
----
+## Testing
 
-## Skill Invocation Guide
+- `tests/unit/` (auto-marked `unit`): pure logic, no network, no DB, no real LLM. The whole suite stays under 30 s. Mock LLM and HTTP clients at the boundary, i.e. `app.core.llm` functions and `httpx`.
+- `tests/integration/` (auto-marked `integration`): the FastAPI app through `httpx.AsyncClient` with fixture LLM responses.
+- Every bug fix lands with a regression test that goes **red** before the fix and green after.
+- The coverage floor is `COV_MIN` in the `Makefile`. It only moves up. The target is 80% (#14).
+- Evals do not exist yet (#15). Until they do, any prompt or model change is unmeasured; say so in the PR.
 
-Two skill libraries are installed. Both should be used **proactively** — read the relevant `SKILL.md` before starting work in that domain, without waiting for the user to ask.
+## Git workflow
 
-### Skill paths
+Trunk-based: `main` is always deployable and every change arrives by PR. The full process is in `CONTRIBUTING.md`. In short:
 
-| Library | Location | What it covers |
-|---------|----------|----------------|
-| **ECC** | `~/.claude/skills/ecc/<skill-name>/SKILL.md` | Backend, API, DB, Docker, LLM pipelines, testing, deployment |
-| **ui-ux-pro-max** | `~/.claude/skills/ui-ux-pro-max/SKILL.md` | All UI/UX work — pages, components, color, typography, accessibility, layout |
+- One short-lived branch per logical change, named `<type>/<short-description>`, branched from the latest `main`.
+- Conventional Commits, enforced by the commit-msg hook. Write commit subjects in the imperative, ≤ 72 chars. Use the body to explain why. Keep commits small and atomic, with refactors separate from behaviour changes.
+- Fill in the PR template. Link the issue (`Closes #N`). Squash-merge once CI is green, then delete the branch.
+- Commits and PRs carry the author's name only; add no AI co-author or "generated with" lines.
 
-### When to invoke (proactively — no user prompt needed)
+Ask the maintainer before:
+- adding any paid service or changing the model provider
+- force-pushing or rewriting history on `main`
+- changing the API contract (needs a `BREAKING CHANGE:` footer and a version bump)
 
-| Task domain | Skill(s) to read |
-|-------------|-----------------|
-| Any UI component, page, or design decision (Next.js, Tailwind) | `ui-ux-pro-max` ← **always for frontend work** |
-| FastAPI routes, services, Pydantic models | `~/.claude/skills/ecc/backend-patterns/SKILL.md`, `~/.claude/skills/ecc/fastapi-patterns/SKILL.md` |
-| API endpoint design or review | `~/.claude/skills/ecc/api-design/SKILL.md` |
-| Writing or expanding the test suite | `~/.claude/skills/ecc/e2e-testing/SKILL.md` |
-| Docker, containerization, compose changes | `~/.claude/skills/ecc/docker-patterns/SKILL.md` |
-| Deployment config, CI/CD, Railway/ECS | `~/.claude/skills/ecc/deployment-patterns/SKILL.md` |
-| LLM pipeline (`core/llm.py`, prompts, providers) | `~/.claude/skills/ecc/cost-aware-llm-pipeline/SKILL.md` |
-| PostgreSQL, SQLAlchemy, Alembic migrations | `~/.claude/skills/ecc/database-migrations/SKILL.md` |
-| Web scraping pipeline (`price_search.py`) | `~/.claude/skills/ecc/data-scraper-agent/SKILL.md` |
-| Research tasks (market research, API comparison) | `~/.claude/skills/ecc/deep-research/SKILL.md` |
-| Security audit, auth, rate-limiting | `~/.claude/skills/ecc/security-review/SKILL.md` |
-| React patterns, hooks, state management | `~/.claude/skills/ecc/react-patterns/SKILL.md` |
+## Roadmap
 
-### How invocation works
-
-Skills are **not** loaded automatically — they must be explicitly read. Before starting work in a skill domain:
-
-1. Read the `SKILL.md` at the path above using the Read tool
-2. Apply its guidance for the duration of the task
-3. No user prompt needed — this is self-directed
-
-**ECC rules** (`~/.claude/rules/ecc/`) are different — they ARE loaded automatically every session and apply passively to all code written (immutability, error handling, naming, etc.).
-
-### What "invoking" looks like
-
-When reading a skill, briefly note it so the user knows it's being applied:
-> Reading `ui-ux-pro-max` for component design guidance...
-
-Then apply it. Don't skip this for frontend work — the `ui-ux-pro-max` skill enforces anti-template policy, typography, depth, and accessibility standards that prevent generic-looking UI.
-
----
-
-## Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
-```
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
-
-<!-- BEGIN BEADS INTEGRATION -->
-## Issue Tracking with bd (beads)
-
-**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
-
-### Why bd?
-
-- Dependency-aware: Track blockers and relationships between issues
-- Git-friendly: Auto-syncs to JSONL for version control
-- Agent-optimized: JSON output, ready work detection, discovered-from links
-- Prevents duplicate tracking systems and confusion
-
-### Quick Start
-
-**Check for ready work:**
-
-```bash
-bd ready --json
-```
-
-**Create new issues:**
-
-```bash
-bd create "Issue title" --description="Detailed context" -t bug|feature|task -p 0-4 --json
-bd create "Issue title" --description="What this issue is about" -p 1 --deps discovered-from:bd-123 --json
-```
-
-**Claim and update:**
-
-```bash
-bd update bd-42 --status in_progress --json
-bd update bd-42 --priority 1 --json
-```
-
-**Complete work:**
-
-```bash
-bd close bd-42 --reason "Completed" --json
-```
-
-### Issue Types
-
-- `bug` - Something broken
-- `feature` - New functionality
-- `task` - Work item (tests, docs, refactoring)
-- `epic` - Large feature with subtasks
-- `chore` - Maintenance (dependencies, tooling)
-
-### Priorities
-
-- `0` - Critical (security, data loss, broken builds)
-- `1` - High (major features, important bugs)
-- `2` - Medium (default, nice-to-have)
-- `3` - Low (polish, optimization)
-- `4` - Backlog (future ideas)
-
-### Workflow for AI Agents
-
-1. **Check ready work**: `bd ready` shows unblocked issues
-2. **Claim your task**: `bd update <id> --status in_progress`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
-   - `bd create "Found bug" --description="Details about what was found" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
-
-### Auto-Sync
-
-bd automatically syncs with git:
-
-- Exports to `.beads/issues.jsonl` after changes (5s debounce)
-- Imports from JSONL when newer (e.g., after `git pull`)
-- No manual export/import needed!
-
-### Important Rules
-
-- ✅ Use bd for ALL task tracking
-- ✅ Always use `--json` flag for programmatic use
-- ✅ Link discovered work with `discovered-from` dependencies
-- ✅ Check `bd ready` before asking "what should I work on?"
-- ❌ Do NOT create markdown TODO lists
-- ❌ Do NOT use external issue trackers
-- ❌ Do NOT duplicate tracking systems
-
-For more details, see README.md and docs/QUICKSTART.md.
-
-<!-- END BEADS INTEGRATION -->
+Work is tracked as GitHub issues labelled by area (`reliability`, `evals`, `security`, …) and priority (`P0`–`P2`). Each issue body names its phase. Check open `P0` issues first.
