@@ -2,13 +2,14 @@
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from decimal import Decimal
 
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.llm import generate
 from app.models.damage import DamageItem
-from app.models.estimate import CostEstimate, PricingMethod
+from app.models.estimate import CostEstimate, PricingMethod, ReportTotals
 from app.models.llm_outputs import PriceEstimate
 from app.models.vehicle import Vehicle
 from app.prompts import render
@@ -17,6 +18,24 @@ from app.services.price_search import search_part_prices
 from app.services.static_prices import lookup_static_price
 
 logger = logging.getLogger(__name__)
+
+
+_CENT = Decimal("0.01")
+
+
+def compute_totals(estimates: Sequence[CostEstimate]) -> ReportTotals:
+    """Sum a report: unpriced parts are listed and excluded; labour always counts."""
+    parts = sum(
+        (e.part_cost_avg for e in estimates if e.part_cost_avg is not None),
+        Decimal("0"),
+    ).quantize(_CENT)
+    labor = sum((e.labor_cost for e in estimates), Decimal("0")).quantize(_CENT)
+    return ReportTotals(
+        parts_total=parts,
+        labor_total=labor,
+        grand_total=(parts + labor).quantize(_CENT),
+        unpriced_components=[e.component for e in estimates if e.part_cost_avg is None],
+    )
 
 
 async def estimate_cost(

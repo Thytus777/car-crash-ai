@@ -27,6 +27,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",
+    "hypothesis>=6.170.15",
     "mypy>=1.13",
     "pre-commit>=4.0",
     "pytest>=8.3",
