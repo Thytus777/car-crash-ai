@@ -70,7 +70,7 @@ async def test_analyze_with_vehicle_override(client: AsyncClient) -> None:
         response = await client.post(
             "/api/v1/analyze",
             json={
-                "upload_id": "test123",
+                "upload_id": "0123456789ab",
                 "make": "Toyota",
                 "model": "Camry",
                 "year": 2020,
@@ -96,7 +96,7 @@ async def test_analyze_low_confidence_returns_confirmation(
     ):
         response = await client.post(
             "/api/v1/analyze",
-            json={"upload_id": "test123"},
+            json={"upload_id": "0123456789ab"},
         )
 
     assert response.status_code == 200

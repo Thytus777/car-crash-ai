@@ -12,6 +12,7 @@ from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
 from app.services.damage_detect import detect_damage
+from app.services.image_proc import UPLOAD_ID_PATTERN
 from app.services.sanity_check import run_sanity_check
 from app.services.vehicle_id import identify_vehicle, needs_user_input
 
@@ -21,7 +22,11 @@ router = APIRouter()
 
 
 class AnalyzeRequest(BaseModel):
-    upload_id: str = Field(..., description="Upload ID from /upload endpoint")
+    upload_id: str = Field(
+        ...,
+        pattern=UPLOAD_ID_PATTERN,
+        description="Upload ID from /upload endpoint",
+    )
     make: str | None = Field(default=None, description="Override: vehicle make")
     model: str | None = Field(default=None, description="Override: vehicle model")
     year: int | None = Field(default=None, description="Override: vehicle year")
