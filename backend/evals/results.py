@@ -158,7 +158,7 @@ def render_markdown(run: EvalRun) -> str:
     if m.spend.unpriced_models:
         lines += [
             "",
-            "Unpriced models (add to evals/pricing.yaml): "
+            "Unpriced models (add to backend/app/data/model_pricing.yaml): "
             + ", ".join(m.spend.unpriced_models),
         ]
     if m.by_tag:

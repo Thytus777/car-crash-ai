@@ -8,7 +8,6 @@ Measures the **production pipeline** (`app.services.assessment.assess`) against 
 | `taxonomy.yaml` | fixed components, damage types, severity levels, tags |
 | `dataset/` | cases (`<case_id>/label.json` + committed images) and `manifest.json` (version, smoke subset) |
 | `local_images/` | images you may not redistribute (git-ignored) |
-| `pricing.yaml` | USD per 1M tokens per model, copied from the providers' pricing pages |
 | `thresholds.yaml` | how far a run may regress before the eval gate fails |
 | `results/` | one `.json` + `.md` per run |
 | `.cache/` | cached model replies (git-ignored) |
@@ -42,7 +41,7 @@ Each run writes `results/<UTC time>_<prompt version>_<model>.json`, with every p
 | Schema-valid first attempt | Model calls that returned schema-valid output on the first try |
 | Retry rate / call failure rate | Calls needing more than one attempt / calls that ultimately failed |
 | Latency p50 / p95 | Model time per case. Cached replies carry their originally recorded latency, so cached runs stay comparable |
-| Cost per request | Tokens × `pricing.yaml`; "n/a" until every model used is priced |
+| Cost per request | Tokens × `backend/app/data/model_pricing.yaml` (the service's own price table); "n/a" until every model used is priced |
 
 A metric shows `n/a`, never 0, when there is nothing to measure it on.
 

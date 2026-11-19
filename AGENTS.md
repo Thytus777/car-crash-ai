@@ -62,7 +62,7 @@ Gotchas:
 - Every bug fix lands with a regression test that goes **red** before the fix and green after.
 - Fake the LLM with `tests/llm_fakes.py`: `ScriptedClient` replays replies and errors for policy tests, and `llm_result()` wraps an output for patched `generate` calls. The SDKs send over `httpx2`, which respx can't intercept, so mock at the `ProviderClient` seam.
 - The coverage floor is `COV_MIN` in the `Makefile`. It only moves up. The target is 80% (#14).
-- Evals: the labelled dataset lives in `evals/dataset/` (format: `backend/evals/schema.py`, guide: `evals/LABELLING.md`). Labels come only from a person. Never write or edit `label.json` content yourself, and never invent cases; test the harness with synthetic fixtures in `tmp_path`. `make eval-validate` checks the dataset. `make eval` / `make eval-smoke` run the real pipeline over it (cached replies in `evals/.cache/`), and `make eval-compare` gates regressions against `evals/thresholds.yaml`. `evals/README.md` defines every metric. Model prices in `evals/pricing.yaml` come only from the providers' pricing pages.
+- Evals: the labelled dataset lives in `evals/dataset/` (format: `backend/evals/schema.py`, guide: `evals/LABELLING.md`). Labels come only from a person. Never write or edit `label.json` content yourself, and never invent cases; test the harness with synthetic fixtures in `tmp_path`. `make eval-validate` checks the dataset. `make eval` / `make eval-smoke` run the real pipeline over it (cached replies in `evals/.cache/`), and `make eval-compare` gates regressions against `evals/thresholds.yaml`. `evals/README.md` defines every metric. Model prices in `backend/app/data/model_pricing.yaml` come only from the providers' pricing pages.
 
 ## Git workflow
 

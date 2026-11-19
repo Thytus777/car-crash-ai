@@ -6,6 +6,7 @@ same code: triage -> vehicle ID -> damage detection -> pricing -> review.
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 from app.core.config import settings
@@ -16,7 +17,7 @@ from app.core.errors import (
     UnusableImagesError,
 )
 from app.core.llm import record_llm_calls
-from app.core.metrics import ASSESSMENTS
+from app.core.metrics import ASSESSMENTS, BUDGET_EXCEEDED
 from app.core.tracing import tracer
 from app.models.damage import DamageItem
 from app.models.estimate import (
@@ -51,6 +52,7 @@ async def assess(request: AssessmentRequest) -> AssessmentReport | VehicleConfir
 
     Raises typed AppErrors (not-a-vehicle, unusable-images, upstream ...).
     """
+    started = time.perf_counter()
     attributes = {"app.prompt_version": settings.prompt_version}
     with tracer.start_as_current_span("assess", attributes=attributes) as span:
         with record_llm_calls() as calls:
@@ -64,15 +66,47 @@ async def assess(request: AssessmentRequest) -> AssessmentReport | VehicleConfir
                 raise
         ASSESSMENTS.labels(result.status).inc()
         result.meta = AssessmentMeta.from_calls(settings.prompt_version, calls)
+        result.meta.latency_s = time.perf_counter() - started
+        _check_budgets(result.meta)
         span.set_attributes(
             {
                 "app.result": result.status,
                 "app.llm_calls": result.meta.llm_calls,
                 "app.input_tokens": result.meta.input_tokens,
                 "app.output_tokens": result.meta.output_tokens,
+                "app.latency_s": result.meta.latency_s or 0.0,
+                "app.budget_exceeded": result.meta.budget_exceeded,
             }
         )
+        if result.meta.cost_usd is not None:
+            span.set_attribute("app.cost_usd", result.meta.cost_usd)
     return result
+
+
+def _check_budgets(meta: AssessmentMeta) -> None:
+    """Flag (not fail) requests over their cost or latency budget."""
+    budget = settings.request_cost_budget_usd
+    if budget is not None and meta.cost_usd is not None and meta.cost_usd > budget:
+        meta.budget_exceeded.append("cost")
+    if (
+        meta.latency_s is not None
+        and meta.latency_s > settings.request_latency_budget_s
+    ):
+        meta.budget_exceeded.append("latency")
+    for name in meta.budget_exceeded:
+        BUDGET_EXCEEDED.labels(name).inc()
+    if meta.budget_exceeded:
+        logger.warning(
+            "Assessment over budget: %s",
+            ", ".join(meta.budget_exceeded),
+            extra={
+                "budget_exceeded": meta.budget_exceeded,
+                "cost_usd": meta.cost_usd,
+                "latency_s": round(meta.latency_s or 0, 2),
+                "cost_budget_usd": budget,
+                "latency_budget_s": settings.request_latency_budget_s,
+            },
+        )
 
 
 def _confirm_message(vehicle: Vehicle) -> str:

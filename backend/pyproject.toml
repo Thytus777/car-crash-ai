@@ -1,6 +1,6 @@
 [project]
 name = "car-crash-ai"
-version = "0.3.0"
+version = "0.4.0"
 description = "AI-powered vehicle damage detection and cost estimation"
 readme = "../README.md"
 license = "MIT"
@@ -27,6 +27,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.45.2",
     "opentelemetry-instrumentation-fastapi>=0.66b2",
     "prometheus-client>=0.26.0",
+    "pyyaml>=6",
 ]
 
 [dependency-groups]
@@ -39,7 +40,6 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "pytest-cov>=6.0",
-    "pyyaml>=6.0.3",
     "ruff>=0.8",
     "types-pyyaml>=6.0.12.20261113",
 ]
