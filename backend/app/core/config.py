@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     ai_provider: Literal["gemini", "openai"] = "gemini"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     min_image_height: int = 480
 
     cors_origins: list[str] = ["*"]
+
+    # PostgreSQL — asyncpg driver
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/carcrash"
 
 
 settings = Settings()

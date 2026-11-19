@@ -12,81 +12,98 @@ Car Crash AI is a web application that takes photos of a damaged vehicle and pro
 
 ### End-to-end flow
 
-When a user clicks "Analyze Damage" in the browser, this is what happens:
-
 ```
-User uploads photos
+User uploads photos (Next.js frontend)
         │
         ▼
-┌─────────────────────────────────────────┐
-│  1. UPLOAD  (POST /api/v1/upload)       │
-│     Validate images (size, format, res) │
-│     Resize to 1024×1024, save as JPEG   │
-│     Return upload_id                    │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  1. UPLOAD  (POST /api/v1/upload)            │
+│     Validate images (size, format, res)      │
+│     Check image quality (blur, brightness)   │
+│     Resize to 1024×1024, save as JPEG        │
+│     Return upload_id + quality_warnings      │
+└─────────────────────────────────────────────┘
         │
         ▼
-┌─────────────────────────────────────────┐
-│  2. VEHICLE ID  (vision LLM call)       │
-│     Send photos to Gemini/OpenAI        │
-│     "What make/model/year is this car?" │
-│     Parse JSON → Vehicle model          │
-│     If confidence < 70%: ask user       │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  2. VEHICLE ID  (VIN decoder or vision LLM)  │
+│     Path A: decode VIN via NHTSA vPIC API    │
+│     Path B: send photos to Gemini/OpenAI     │
+│       "What make/model/year is this car?"    │
+│     If confidence < 70%: ask user            │
+└─────────────────────────────────────────────┘
         │
         ▼
-┌─────────────────────────────────────────┐
-│  3. DAMAGE DETECTION  (vision LLM call) │
-│     Send photos to Gemini/OpenAI        │
-│     "What parts are damaged? How bad?"  │
-│     Parse JSON → list of DamageItems    │
-│     Each: component, type, severity     │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  3. DAMAGE DETECTION  (zone-based passes)    │
+│                                              │
+│     Zone mode (default):                     │
+│       Pass 1: Front zone components          │
+│       Pass 2: Rear zone components           │
+│       Pass 3: Side zone components           │
+│       Merge: worst severity per component    │
+│                                              │
+│     Consensus mode (high-confidence):        │
+│       Run Gemini + OpenAI in parallel        │
+│       Average severity, flag divergence>0.25 │
+│                                              │
+│     Per-component thresholds applied         │
+│     (structural parts replace at 0.2;        │
+│      cosmetic panels tolerate up to 0.4)     │
+└─────────────────────────────────────────────┘
         │
         ▼
-┌─────────────────────────────────────────┐
-│  4. COST ESTIMATION  (per component)    │
-│                                         │
-│     For each damaged component:         │
-│     ┌─ Try live price search (SerpAPI)  │
-│     │  Search Google → Fetch pages →    │
-│     │  AI extracts prices from text     │
-│     ├─ Fallback: static CSV database    │
-│     ├─ Fallback: AI price estimation    │
-│     │  "Estimate cost of a BMW hood"    │
-│     └─ Last resort: default $300        │
-│                                         │
-│     + Labor cost (hours × $75/hr rate)  │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  4. COST ESTIMATION  (per component)         │
+│                                              │
+│     For each damaged component:              │
+│     ┌─ Try live price search (SerpAPI)       │
+│     │  Search Google → Fetch pages →         │
+│     │  AI extracts prices from text          │
+│     ├─ Fallback: static CSV database         │
+│     ├─ Fallback: AI price estimation         │
+│     └─ Last resort: default $300             │
+│                                              │
+│     + Labor cost (hours × $75/hr rate)       │
+└─────────────────────────────────────────────┘
         │
         ▼
-┌─────────────────────────────────────────┐
-│  5. REPORT                              │
-│     Vehicle info + damage list +        │
-│     per-component cost breakdown +      │
-│     parts total + labor total +         │
-│     grand total + disclaimer            │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  5. SANITY CHECK  (second-pass LLM review)   │
+│     Review full report for coherence         │
+│     Flag: implausible totals, odd combos,    │
+│     severity vs cost mismatches              │
+└─────────────────────────────────────────────┘
         │
         ▼
-   User sees results in Streamlit UI
+┌─────────────────────────────────────────────┐
+│  6. PERSIST + REPORT                         │
+│     Save EstimateRecord to PostgreSQL        │
+│     (fail-safe: response returned even if    │
+│      DB write fails)                         │
+│                                              │
+│     JSON response + PDF download available  │
+│     via GET /api/v1/report/{estimate_id}     │
+└─────────────────────────────────────────────┘
+        │
+        ▼
+   User sees results in Next.js UI
+   (severity bars, cost table, PDF link)
 ```
 
-### The three AI calls
-
-The system makes up to three types of AI calls per analysis:
+### The AI calls per analysis
 
 | Call | Type | Input | Output | Model |
 |------|------|-------|--------|-------|
 | **Vehicle ID** | Vision | Photos + prompt | `{"make": "BMW", "model": "3 Series", "year": 2020, "confidence": 0.92}` | gemini-2.5-flash |
-| **Damage Detection** | Vision | Photos + prompt | `[{"component": "front_bumper", "severity": 0.7, ...}, ...]` | gemini-2.5-flash |
+| **Damage (zone ×3)** | Vision | Photos + zone prompt | `[{"component": "front_bumper", "severity": 0.7, ...}, ...]` | gemini-2.5-flash |
+| **Damage (consensus)** | Vision×2 | Photos + prompt | Merged results from both providers | gemini + gpt-4.1-mini |
 | **Price Estimation** | Text | Vehicle + component | `{"price_low": 180, "price_avg": 280, "price_high": 450}` | gemini-2.5-flash |
+| **Sanity Check** | Text | Full report summary | `["Warning: total seems low for structural damage"]` | gemini-2.5-flash |
 
-All three go through the same abstraction layer (`backend/app/core/llm.py`), which handles provider selection, retries, and fallback automatically.
+All calls go through `backend/app/core/llm.py`, which handles provider selection, retries, and fallback automatically.
 
 ### How the API is used
-
-The backend exposes a REST API that the Streamlit frontend calls over HTTP:
 
 **Step 1 — Upload images:**
 ```
@@ -94,31 +111,54 @@ POST /api/v1/upload
 Content-Type: multipart/form-data
 Body: images[] = [photo1.jpg, photo2.jpg]
 
-Response: { "upload_id": "a1b2c3d4e5f6", "image_count": 2 }
+Response: {
+  "upload_id": "a1b2c3d4e5f6",
+  "image_count": 2,
+  "quality_warnings": [
+    {"image_filename": "photo1.jpg", "warning_type": "blur", "message": "Image may be blurry"}
+  ]
+}
 ```
 
 **Step 2 — Run analysis:**
 ```
 POST /api/v1/analyze
 Content-Type: application/json
-Body: { "upload_id": "a1b2c3d4e5f6" }
+Body: {
+  "upload_id": "a1b2c3d4e5f6",
+  "vin": "1HGBH41JXMN109186",       // optional — triggers NHTSA VIN decode
+  "use_consensus": false,             // true = run both LLM providers
+  "make": "BMW", "model": "3 Series", "year": 2020  // optional override
+}
 
 Response: {
   "vehicle": { "make": "BMW", "model": "3 Series", "year": 2020 },
-  "damage_assessment": { "damages": [...] },
+  "damage_assessment": {
+    "damages": [...],
+    "assessment_method": "zone_pass",
+    "image_quality_warnings": [...],
+    "angle_guidance": { "angles_detected": 2, "suggestion": "Add side photos" }
+  },
   "cost_estimates": [...],
-  "totals": { "parts_total": "860.00", "labor_total": "525.00", "grand_total": "1385.00" }
+  "totals": { "parts_total": "860.00", "labor_total": "525.00", "grand_total": "1385.00" },
+  "assessment_warnings": []
 }
 ```
 
-The user can also skip AI vehicle identification by providing make/model/year in the request:
-```json
-{ "upload_id": "a1b2c3d4e5f6", "make": "BMW", "model": "3 Series", "year": 2020 }
+**Step 3 — Download PDF report:**
+```
+GET /api/v1/report/{estimate_id}
+Response: PDF bytes (Content-Type: application/pdf)
+         or HTML fallback if WeasyPrint not installed
+```
+
+**Step 4 — Estimate history:**
+```
+GET /api/v1/estimates           → last 50 estimates (summary list)
+GET /api/v1/estimates/{id}      → full AssessmentReport JSON
 ```
 
 ### Price estimation cascade
-
-Part pricing uses a three-tier fallback to always return a result:
 
 | Priority | Method | Source | When used |
 |----------|--------|--------|-----------|
@@ -126,18 +166,17 @@ Part pricing uses a three-tier fallback to always return a result:
 | 2nd | **Static CSV** | `backend/app/data/parts_prices.csv` | Vehicle/component match exists in CSV |
 | 3rd | **AI estimate** | LLM estimates based on vehicle segment | No live or static data available |
 
-The AI estimate is vehicle-aware — it knows a BMW hood costs more than a Toyota hood, and a mirror costs less than a quarter panel.
+### Architecture overview
 
-### Two-process architecture
-
-The system runs as two separate processes:
+The system runs as two separate processes, connected to a shared PostgreSQL database:
 
 | Process | Port | Role |
 |---------|------|------|
-| **Backend** (FastAPI + Uvicorn) | 8000 | API server — handles uploads, AI calls, cost calculations |
-| **Frontend** (Streamlit) | 8501 | Web UI — file upload, results display, user interaction |
+| **Backend** (FastAPI + Uvicorn) | 8000 | API server — uploads, AI calls, cost calculations, DB writes |
+| **Frontend** (Next.js) | 3000 | Web UI — file upload, results display, history |
+| **PostgreSQL** | 5432 | Persistent estimate history, upload sessions |
 
-The frontend calls the backend over HTTP (`http://localhost:8000/api/v1`). CORS middleware on the backend allows cross-origin requests from the Streamlit process.
+Orchestrated via `docker-compose.yml` in the project root. The backend waits for PostgreSQL healthcheck before starting.
 
 ---
 
@@ -145,9 +184,8 @@ The frontend calls the backend over HTTP (`http://localhost:8000/api/v1`). CORS 
 
 | Technology | Version | Purpose |
 |---|---|---|
-| **Python** | 3.11+ | Primary language |
-
-**Why Python:** Best-in-class AI/ML ecosystem, native async support, rapid prototyping. Both backend and frontend are Python, keeping the stack simple for a Python-only team.
+| **Python** | 3.11+ | Backend language |
+| **Node.js** | 20+ | Next.js frontend runtime |
 
 ---
 
@@ -163,20 +201,17 @@ The frontend calls the backend over HTTP (`http://localhost:8000/api/v1`). CORS 
 
 ### FastAPI
 
-Async-first web framework with automatic OpenAPI docs and native Pydantic integration. Chosen over Flask (no native async, no built-in validation) and Django (too heavyweight for an API-only service). Provides type-safe request/response models out of the box.
+Async-first web framework with automatic OpenAPI docs and native Pydantic integration. Provides type-safe request/response models out of the box.
 
-- **Entry point:** `backend/app/main.py` — mounts routers for `/api/v1/upload`, `/api/v1/analyze`, `/api/v1/estimate`
-- **Auto-docs:** Available at `/docs` (Swagger) and `/redoc`
+**Routers registered in `backend/app/main.py`:**
 
-### Uvicorn
-
-High-performance ASGI server that runs the FastAPI application. Handles concurrent connections for I/O-bound LLM and web scraping calls.
-
-### Pydantic / pydantic-settings
-
-Pydantic validates all API request/response models. `pydantic-settings` loads configuration from `.env` files with type coercion and defaults.
-
-- **Config:** `backend/app/core/config.py` — `Settings` class with typed fields for API keys, upload limits, labor rates, and CORS origins
+| Router | Prefix | Description |
+|--------|--------|-------------|
+| `upload` | `/api/v1/upload` | Image upload + quality validation |
+| `analysis` | `/api/v1/analyze` | Full damage analysis pipeline |
+| `estimate` | `/api/v1/estimate` | Single estimate retrieval |
+| `estimates` | `/api/v1/estimates` | Estimate list + history |
+| `report` | `/api/v1/report` | PDF/HTML report download |
 
 ---
 
@@ -185,22 +220,54 @@ Pydantic validates all API request/response models. `pydantic-settings` loads co
 | Package | Version | Models Used | Role |
 |---|---|---|---|
 | **google-genai** | ≥1.0.0 | `gemini-2.5-flash` | Default provider (vision + text) |
-| **openai** | ≥1.60.0 | `gpt-4.1-mini` (vision), `gpt-4.1-nano` (text) | Fallback provider |
+| **openai** | ≥1.60.0 | `gpt-4.1-mini` (vision), `gpt-4.1-nano` (text) | Fallback provider + consensus partner |
 
-### Provider Architecture
+### LLM Abstraction Layer (`backend/app/core/llm.py`)
 
-A custom abstraction layer in `backend/app/core/llm.py` exposes two functions:
+Exposes three public functions:
 
-- `vision_completion(prompt, images_b64, ...)` — for damage analysis from photos
-- `text_completion(prompt, ...)` — for price extraction from scraped text
+- `vision_completion(prompt, images_b64, ...)` — single-provider vision call
+- `text_completion(prompt, ...)` — single-provider text call
+- `dual_vision_completion(prompt, images_b64, ...)` — runs both providers in parallel via `asyncio.gather`, returns `(primary_result, secondary_result | None)`
 
 **Key design decisions:**
 
-- **Multi-provider support** — Gemini is the default (free tier available for development); OpenAI is the automatic fallback when Gemini is rate-limited
-- **Automatic retry** — Up to 2 retries with backoff on 429/RESOURCE_EXHAUSTED errors, parsing `retryDelay` from error responses
-- **Seamless fallback** — If the primary provider exhausts retries, the system switches to the other provider transparently
-- **Thinking model support** — Gemini 2.5 models get extra token padding (+8,000 tokens) and a thinking budget (512 tokens) since reasoning tokens count against output limits
-- **Provider switching** — Controlled via `ai_provider` setting in `.env` (`"gemini"` or `"openai"`)
+- **Multi-provider support** — Gemini free tier for development; OpenAI is automatic fallback on rate limits
+- **Automatic retry** — Up to 2 retries with backoff on 429/RESOURCE_EXHAUSTED, parsing `retryDelay` from error responses
+- **Thinking model support** — Gemini 2.5 models get +8,000 token padding and 512-token thinking budget
+- **Consensus mode** — `dual_vision_completion` enables running both providers for high-stakes assessments
+
+### Consensus Service (`backend/app/services/consensus.py`)
+
+When `use_consensus=True` in the analyze request:
+
+1. Both providers run in parallel via `dual_vision_completion`
+2. Severity scores are averaged per component
+3. Divergence ≥ 0.25 is flagged as a warning in the response
+4. The higher-severity source's `damage_type` and `description` are used
+5. `COMPONENT_THRESHOLDS` determines replace/repair cutoff per component type
+
+### Zone-Based Damage Detection (`backend/app/services/damage_detect.py`)
+
+Default mode runs three focused passes instead of one broad prompt:
+
+| Zone | Components Covered |
+|------|--------------------|
+| **Front** | front_bumper, hood, grille, headlights, front fenders, windshield_front, a_pillars |
+| **Rear** | rear_bumper, trunk, taillights, quarter panels, windshield_rear |
+| **Side** | all doors, mirrors, rocker panels, b_pillars, roof, all wheels |
+
+Each pass gives the model a narrow component list, improving per-component accuracy. Results are merged by taking the worst severity per component across passes.
+
+### Sanity Check (`backend/app/services/sanity_check.py`)
+
+After building the full `AssessmentReport`, a second LLM call reviews the complete summary for coherence:
+
+- Cost plausibility (grand total vs. severity distribution)
+- Severity consistency (e.g., "airbag deployed" but only cosmetic damage)
+- Unusual component combinations
+
+Returns a list of warning strings appended to `assessment_warnings` in the response. Empty list means no issues.
 
 ---
 
@@ -208,14 +275,18 @@ A custom abstraction layer in `backend/app/core/llm.py` exposes two functions:
 
 | Package | Version | Purpose |
 |---|---|---|
-| **Pillow (PIL)** | ≥11.0.0 | Image validation, resizing, format conversion |
+| **Pillow (PIL)** | ≥11.0.0 | Image validation, resizing, quality checks |
 
-Used in `backend/app/services/image_proc.py` to:
+Used in `backend/app/services/image_proc.py`:
 
-- Validate uploaded images (size limits, minimum resolution 640×480, format check)
+- Validate uploaded images (size limits, minimum resolution 640×480)
+- **Blur detection** — `ImageFilter.FIND_EDGES` + `ImageStat.Stat` variance; threshold 80.0
+- **Brightness check** — `ImageStat.Stat` mean; dark threshold 50.0, overexposed threshold 220.0
 - Resize to 1024×1024 max using LANCZOS resampling
-- Convert RGBA → RGB and save as JPEG (quality 90)
-- Encode processed images as base64 for LLM API calls
+- Convert RGBA → RGB, save as JPEG quality 90
+- Encode as base64 for LLM API calls
+
+**Angle guidance** — heuristic based on image count: < 2 images = "missing coverage", 2–3 = "suggest more angles", 4+ = "good coverage". Guidance is included in the response to prompt users to upload better photos.
 
 ---
 
@@ -223,67 +294,168 @@ Used in `backend/app/services/image_proc.py` to:
 
 | Package | Version | Purpose |
 |---|---|---|
-| **google-search-results** (SerpAPI) | ≥2.4.2 | Programmatic Google search for live part prices |
-| **httpx** | ≥0.28.0 | Async HTTP client for fetching web pages |
+| **google-search-results** (SerpAPI) | ≥2.4.2 | Live part price search via Google |
+| **httpx** | ≥0.28.0 | Async HTTP client for fetching pages + API calls |
 | **trafilatura** | ≥2.0.0 | Text extraction from HTML pages |
-| **beautifulsoup4** | ≥4.12.0 | HTML parsing (available, not primary) |
-
-Used in the live price search pipeline (`backend/app/services/price_search.py`):
-
-1. **Search** — SerpAPI queries Google for `"{year} {make} {model} {component} price buy"`, returns top 5 URLs
-2. **Fetch** — `httpx.AsyncClient` fetches each URL with 5s timeout and redirect following
-3. **Extract** — `trafilatura.extract()` pulls clean text from HTML (truncated to 2,000 chars per page)
-4. **Price parsing** — LLM `text_completion` extracts structured price data (price, currency, part type, stock status) from each snippet
-5. **Filter** — Results below 50% confidence are discarded
-
-**Why httpx over requests:** Native async support, required for FastAPI's async handlers. Also used in the Streamlit frontend to call the backend API.
+| **beautifulsoup4** | ≥4.12.0 | HTML parsing (available as alternative) |
 
 ---
 
-## 6. Frontend
+## 6. VIN Decoder (`backend/app/services/vin_decoder.py`)
+
+Integrates the **NHTSA vPIC API** (free, no key required):
+
+```
+GET https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/{vin}?format=json
+```
+
+- Validates 17-char VIN format
+- Decodes make, model, year, body style from official NHTSA database
+- Returns a `Vehicle` model with `confidence=1.0` (authoritative decode)
+- Raises `VINDecodeError` on invalid VIN or API failure
+- Analysis endpoint falls back to vision-based ID on `VINDecodeError`
+
+Body style strings from NHTSA are normalized to standard values (`sedan`, `suv`, `coupe`, etc.) via `_normalise_body_style()`.
+
+---
+
+## 7. Database (`backend/app/db/`)
 
 | Package | Version | Purpose |
 |---|---|---|
-| **Streamlit** | ≥1.41.0 | Web UI |
+| **SQLAlchemy** | ≥2.0.0 | ORM + async engine |
+| **asyncpg** | ≥0.30.0 | PostgreSQL async driver |
+| **alembic** | ≥1.14.0 | Database migrations |
+| **PostgreSQL** | 16 | Primary database |
 
-**Why Streamlit:** Enables a fully functional web UI in pure Python — no JavaScript, HTML, or CSS needed. Ideal for MVP speed with a Python-only team. Built-in support for file uploads, image display, metrics, expanders, and JSON views.
+### Session management (`backend/app/db/session.py`)
 
-- **Entry point:** `frontend/streamlit_app.py`
-- **Features:** Multi-image upload (1–10), optional vehicle info override via sidebar, damage severity visualization with progress bars, cost breakdown with metrics, raw JSON report view
-- **Communicates with backend** via `httpx` HTTP calls to `http://localhost:8000/api/v1`
+```python
+engine = create_async_engine(settings.database_url, pool_size=5, max_overflow=10)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+```
+
+Dependency injection via `get_db() -> AsyncGenerator[AsyncSession, None]` — commits on success, rolls back on exception.
+
+### Database models (`backend/app/db/models.py`)
+
+| Table | Key columns | Purpose |
+|-------|-------------|---------|
+| `upload_sessions` | id (str 12), created_at, image_count, quality_warnings_json | Track uploads |
+| `estimates` | id (autoincrement), upload_id (FK), vehicle fields, parts/labor/grand totals, report_json | Persist full reports |
+
+### Migrations (`backend/alembic/`)
+
+`001_initial_schema.py` creates both tables. Run with:
+```bash
+cd backend && alembic upgrade head
+```
 
 ---
 
-## 7. Data & Storage
+## 8. PDF Reports (`backend/app/services/report_pdf.py`)
 
-| Storage | Format | Purpose |
+| Package | Version | Purpose |
 |---|---|---|
-| CSV files | `.csv` | Static parts price database (version-controlled fallback) |
-| File system | JPEG | Processed image uploads (`uploads/{upload_id}/`) |
-| `.env` files | Key-value | API keys and configuration |
+| **Jinja2** | ≥3.1.0 | HTML report template rendering |
+| **WeasyPrint** | ≥62.0 | HTML → PDF conversion |
 
-**Why no database:** MVP simplicity. All state is ephemeral (upload → analyze → respond). A database is planned for Phase 2 (history, user accounts, cached estimates).
+Template at `backend/app/templates/report.html` includes:
+
+- Severity bars (color-coded: red ≥ 0.6, yellow ≥ 0.3, green < 0.3)
+- Damage table with replace/repair badges
+- Cost breakdown with totals
+- Quality warnings, angle guidance, sanity check flags
+- Disclaimer section
+
+`generate_pdf()` checks for WeasyPrint availability at runtime and returns HTML bytes if the system libraries (pango, cairo) aren't installed — detected by checking for `%PDF` magic bytes.
 
 ---
 
-## 8. Testing
+## 9. Frontend (`frontend-next/`)
+
+| Package | Version | Purpose |
+|---|---|---|
+| **Next.js** | 15.1.0 | React framework (App Router) |
+| **React** | 19.0.0 | UI library |
+| **TypeScript** | 5+ | Type safety |
+| **Tailwind CSS** | 3.4+ | Utility-first styling |
+| **clsx** | 2.1+ | Conditional class merging |
+
+### Key pages and components
+
+| File | Purpose |
+|------|---------|
+| `app/page.tsx` | Main upload + analysis flow (stage machine: upload → options → analyzing → result → error) |
+| `app/history/page.tsx` | Estimate history table with PDF links |
+| `components/UploadZone.tsx` | Drag-and-drop image upload (JPEG/PNG/HEIC filter) |
+| `components/DamageReport.tsx` | Results display — severity bars, cost table, PDF download |
+| `lib/api.ts` | Typed API client for all backend calls |
+
+### Frontend state flow
+
+```
+upload stage    → drag-drop images → call POST /upload → show quality warnings
+options stage   → enter VIN / make/model/year / enable consensus mode
+analyzing       → call POST /analyze → show loading
+result          → render DamageReport with full assessment
+error           → show message with retry
+```
+
+### API client (`frontend-next/lib/api.ts`)
+
+TypeScript interfaces: `UploadResponse`, `DamageItem`, `CostEstimate`, `AssessmentReport`
+
+Functions:
+- `uploadImages(files: File[]): Promise<UploadResponse>`
+- `analyzeUpload(uploadId, opts): Promise<AssessmentReport>`
+- `reportPdfUrl(estimateId): string`
+- `listEstimates(): Promise<EstimateSummary[]>`
+
+---
+
+## 10. Containerization
+
+| File | Purpose |
+|------|---------|
+| `backend/Dockerfile` | Python 3.11-slim + WeasyPrint system deps |
+| `docker-compose.yml` | PostgreSQL 16 + backend service orchestration |
+
+`docker-compose.yml` services:
+
+- **postgres** — `postgres:16-alpine`, healthcheck (`pg_isready`), persistent named volume
+- **backend** — builds from `./backend`, runs `alembic upgrade head && uvicorn`, depends on postgres health
+
+WeasyPrint requires system packages (pango, cairo, gdk-pixbuf2) that are installed in the Dockerfile via `apt-get`.
+
+---
+
+## 11. Testing
 
 | Package | Purpose |
 |---|---|
 | **pytest** | Test runner and assertions |
-| **pytest-asyncio** | Async test support for `async def` test functions |
-| **unittest.mock** | Mocking LLM API calls to avoid real API usage in tests |
-| **httpx.AsyncClient** | Testing FastAPI endpoints via `ASGITransport` |
+| **pytest-asyncio** | Async test support |
+| **unittest.mock** | Mock LLM calls (`vision_completion`, `text_completion`) |
+| **httpx.AsyncClient** | FastAPI endpoint testing via `ASGITransport` |
+
+Mocking strategy: mock at the abstraction layer (`app.core.llm.vision_completion`) rather than SDK internals — provider-agnostic, returns simple strings.
 
 ---
 
-## 9. Architecture Decisions
+## 12. Architecture Decisions
 
 | Decision | Rationale |
 |---|---|
-| **Multi-provider LLM** | Cost optimization (Gemini free tier for dev), reliability (automatic fallback on rate limits), no vendor lock-in |
-| **Async everywhere** | All operations are I/O-bound (LLM API calls, web scraping, file I/O). Async lets the server handle concurrent requests without blocking |
-| **Streamlit over React/Vue** | MVP speed — functional UI in ~140 lines of Python. No frontend build pipeline, no JS expertise needed |
-| **No database yet** | MVP simplicity — stateless request/response pattern. File system for uploads, `.env` for config, CSV for static prices. Database planned for Phase 2 |
-| **SerpAPI over direct scraping** | Reliable Google results without anti-bot issues. Pay-per-search pricing aligns with usage patterns |
-| **Trafilatura over BeautifulSoup** | Purpose-built for article/content extraction. Handles boilerplate removal automatically, producing cleaner text for LLM price extraction |
+| **Zone-based damage prompts** | Three focused passes (front/rear/side) give the model a constrained component list per pass, improving accuracy over one broad prompt |
+| **Consensus mode** | Running both providers and averaging severity reduces LLM non-determinism; divergence flag surfaces when models disagree strongly |
+| **Per-component thresholds** | Structural/safety parts use a lower replace threshold (0.2) than cosmetic panels (0.35–0.45) — matches real repair shop decisions |
+| **Sanity check pass** | Second LLM call reviewing the full report catches hallucinations and implausible cost/severity combinations |
+| **Image quality gates** | Blur and brightness checks before analysis prevent bad-input failures that degrade accuracy silently |
+| **VIN decode first** | NHTSA VIN decode is free, authoritative, and faster than vision-based ID — used when the user provides a VIN |
+| **DB fail-safe pattern** | `EstimateRecord` persistence is wrapped in try/except so a DB failure never blocks the API response |
+| **WeasyPrint fallback** | Returns HTML bytes if WeasyPrint system libs aren't installed; detected by checking `%PDF` magic bytes |
+| **Multi-provider LLM** | Cost optimization (Gemini free tier for dev), reliability (automatic fallback), no vendor lock-in |
+| **Async everywhere** | All operations are I/O-bound (LLM, web scraping, DB). Async lets the server handle concurrent requests without blocking |
+| **Next.js over Streamlit** | Production-grade UI with TypeScript type safety, proper routing, and a real component model; Streamlit was the MVP prototype |
+| **PostgreSQL + SQLAlchemy async** | Persistent estimate history, type-safe queries, standard ORM migration tooling via Alembic |

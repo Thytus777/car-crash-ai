@@ -57,6 +57,69 @@ async def _retry(coro_factory, label: str):
 # --- Public API ---
 
 
+async def dual_vision_completion(
+    prompt: str,
+    images_b64: list[str],
+    max_tokens: int = 2000,
+    temperature: float = 0.2,
+) -> tuple[str, str | None]:
+    """Run vision completion on BOTH providers in parallel and return both results.
+
+    Returns (primary_result, secondary_result). secondary_result is None if the
+    second provider is unavailable or fails. The caller is responsible for
+    consensus logic.
+    """
+    import asyncio
+
+    primary = settings.ai_provider
+    secondary = "openai" if primary == "gemini" else "gemini"
+
+    has_secondary = bool(
+        (secondary == "openai" and settings.openai_api_key)
+        or (secondary == "gemini" and _get_gemini_key())
+    )
+
+    if not has_secondary:
+        result = await vision_completion(prompt, images_b64, max_tokens, temperature)
+        return result, None
+
+    async def _primary() -> str:
+        if primary == "gemini":
+            return await _retry(
+                lambda: _gemini_vision(prompt, images_b64, max_tokens, temperature),
+                "Gemini vision (primary)",
+            )
+        return await _retry(
+            lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, "high"),
+            "OpenAI vision (primary)",
+        )
+
+    async def _secondary() -> str:
+        if secondary == "openai":
+            return await _retry(
+                lambda: _openai_vision(
+                    prompt, images_b64, max_tokens, temperature, "high"
+                ),
+                "OpenAI vision (secondary)",
+            )
+        return await _retry(
+            lambda: _gemini_vision(prompt, images_b64, max_tokens, temperature),
+            "Gemini vision (secondary)",
+        )
+
+    results = await asyncio.gather(_primary(), _secondary(), return_exceptions=True)
+    primary_result = results[0] if not isinstance(results[0], Exception) else None
+    secondary_result = results[1] if not isinstance(results[1], Exception) else None
+
+    if primary_result is None and secondary_result is None:
+        raise LLMRateLimitError("Both AI providers failed during consensus run.")
+
+    if primary_result is None:
+        return secondary_result, None  # type: ignore[return-value]
+
+    return primary_result, secondary_result
+
+
 async def vision_completion(
     prompt: str,
     images_b64: list[str],
@@ -182,15 +245,13 @@ async def _gemini_vision(
 
     model_name = settings.gemini_model
     config_kwargs: dict = {
-        "max_output_tokens": max_tokens,
+        "max_output_tokens": max_tokens + _GEMINI_TOKEN_PADDING,
         "temperature": temperature,
         "response_mime_type": "application/json",
-    }
-    if "2.5" in model_name:
-        config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
-        config_kwargs["thinking_config"] = types.ThinkingConfig(
+        "thinking_config": types.ThinkingConfig(
             thinking_budget=_GEMINI_THINKING_BUDGET
-        )
+        ),
+    }
 
     response = await client.aio.models.generate_content(
         model=model_name,
@@ -213,15 +274,13 @@ async def _gemini_text(
 
     model_name = settings.gemini_model
     config_kwargs: dict = {
-        "max_output_tokens": max_tokens,
+        "max_output_tokens": max_tokens + _GEMINI_TOKEN_PADDING,
         "temperature": temperature,
         "response_mime_type": "application/json",
-    }
-    if "2.5" in model_name:
-        config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
-        config_kwargs["thinking_config"] = types.ThinkingConfig(
+        "thinking_config": types.ThinkingConfig(
             thinking_budget=_GEMINI_THINKING_BUDGET
-        )
+        ),
+    }
 
     response = await client.aio.models.generate_content(
         model=model_name,

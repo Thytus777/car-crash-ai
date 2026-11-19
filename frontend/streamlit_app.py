@@ -35,7 +35,10 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
         files = [("images", (f.name, f.getvalue(), f.type)) for f in uploaded_files]
         try:
             upload_resp = httpx.post(f"{API_BASE}/upload", files=files, timeout=30.0)
-            upload_resp.raise_for_status()
+            if upload_resp.status_code != 200:
+                detail = upload_resp.json().get("detail", upload_resp.text)
+                st.error(f"Upload failed: {detail}")
+                st.stop()
             upload_data = upload_resp.json()
             upload_id = upload_data["upload_id"]
             st.success(f"✅ Uploaded {upload_data['image_count']} image(s)")
@@ -43,41 +46,83 @@ if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files)
             st.error(f"Upload failed: {e}")
             st.stop()
 
-    with st.spinner("Analyzing damage (this may take 30–60 seconds)..."):
-        analyze_payload = {"upload_id": upload_id}
+    def _handle_rate_limit(resp: httpx.Response) -> None:
+        if resp.status_code == 429:
+            detail = resp.json().get("detail", "")
+            st.error(f"⏳ AI rate limit reached: {detail}")
+            st.info("💡 Tip: Wait a few minutes and try again, or check your API key quotas at https://ai.google.dev/gemini-api/docs/rate-limits")
+            st.stop()
+
+    def _handle_error(resp: httpx.Response, step: str) -> None:
+        _handle_rate_limit(resp)
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", resp.text)
+            st.error(f"{step} failed: {detail}")
+            st.stop()
+
+    # --- Step 1: Vehicle Identification ---
+    with st.status("🔍 Step 1/3 — Identifying vehicle...", expanded=True) as status:
+        id_payload = {"upload_id": upload_id}
         if override_make and override_model and override_year:
-            analyze_payload["make"] = override_make
-            analyze_payload["model"] = override_model
-            analyze_payload["year"] = override_year
+            id_payload["make"] = override_make
+            id_payload["model"] = override_model
+            id_payload["year"] = override_year
 
         try:
-            analysis_resp = httpx.post(
-                f"{API_BASE}/analyze", json=analyze_payload, timeout=300.0
+            vehicle_resp = httpx.post(
+                f"{API_BASE}/identify-vehicle", json=id_payload, timeout=120.0
             )
-            if analysis_resp.status_code == 429:
-                detail = analysis_resp.json().get("detail", "")
-                st.error(f"⏳ AI rate limit reached: {detail}")
-                st.info("💡 Tip: Wait a few minutes and try again, or check your API key quotas at https://ai.google.dev/gemini-api/docs/rate-limits")
-                st.stop()
-            analysis_resp.raise_for_status()
-            report = analysis_resp.json()
-        except httpx.HTTPStatusError as e:
-            st.error(f"Analysis failed: {e}")
-            st.stop()
+            _handle_error(vehicle_resp, "Vehicle identification")
+            vehicle_data = vehicle_resp.json()
         except Exception as e:
-            st.error(f"Analysis failed: {e}")
+            st.error(f"Vehicle identification failed: {e}")
             st.stop()
 
-    # --- Handle low-confidence vehicle ID ---
-    if report.get("status") == "vehicle_confirmation_needed":
-        st.warning(report["message"])
-        guess = report["vehicle_guess"]
-        st.info(
-            f"AI guess: **{guess.get('year', '?')} {guess.get('make', '?')} "
-            f"{guess.get('model', '?')}** (confidence: {guess.get('confidence', 0):.0%})"
-        )
-        st.markdown("Please enter the correct vehicle info in the sidebar and re-run.")
-        st.stop()
+        if vehicle_data.get("status") == "vehicle_confirmation_needed":
+            guess = vehicle_data["vehicle_guess"]
+            st.warning(vehicle_data["message"])
+            st.info(
+                f"AI guess: **{guess.get('year', '?')} {guess.get('make', '?')} "
+                f"{guess.get('model', '?')}** (confidence: {guess.get('confidence', 0):.0%})"
+            )
+            st.markdown("Please enter the correct vehicle info in the sidebar and re-run.")
+            st.stop()
+
+        st.write(f"✅ Identified: {vehicle_data.get('year')} {vehicle_data.get('make')} {vehicle_data.get('model')}")
+        status.update(label="✅ Step 1/3 — Vehicle identified", state="complete")
+
+    # --- Step 2: Damage Detection ---
+    with st.status("🔍 Step 2/3 — Analyzing damage...", expanded=True) as status:
+        try:
+            damage_resp = httpx.post(
+                f"{API_BASE}/detect-damage", json={"upload_id": upload_id}, timeout=120.0
+            )
+            _handle_error(damage_resp, "Damage detection")
+            damage_data = damage_resp.json()
+        except Exception as e:
+            st.error(f"Damage detection failed: {e}")
+            st.stop()
+
+        num_damages = len(damage_data.get("damages", []))
+        st.write(f"✅ Found {num_damages} damaged component(s)")
+        status.update(label=f"✅ Step 2/3 — Found {num_damages} damaged component(s)", state="complete")
+
+    # --- Step 3: Cost Estimation ---
+    with st.status("💰 Step 3/3 — Estimating repair costs...", expanded=True) as status:
+        try:
+            estimate_resp = httpx.post(
+                f"{API_BASE}/estimate-costs",
+                json={"vehicle": vehicle_data, "damage_assessment": damage_data},
+                timeout=300.0,
+            )
+            _handle_error(estimate_resp, "Cost estimation")
+            report = estimate_resp.json()
+        except Exception as e:
+            st.error(f"Cost estimation failed: {e}")
+            st.stop()
+
+        st.write(f"✅ Estimated costs for {len(report.get('cost_estimates', []))} component(s)")
+        status.update(label="✅ Step 3/3 — Cost estimation complete", state="complete")
 
     # --- Vehicle Info ---
     vehicle = report["vehicle"]

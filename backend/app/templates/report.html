@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; padding: 32px; }
+
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1d4ed8; padding-bottom: 16px; margin-bottom: 24px; }
+  .header h1 { font-size: 22px; color: #1d4ed8; }
+  .header .meta { text-align: right; font-size: 11px; color: #666; }
+
+  .vehicle-box { background: #f0f4ff; border-left: 4px solid #1d4ed8; padding: 12px 16px; margin-bottom: 20px; }
+  .vehicle-box h2 { font-size: 16px; margin-bottom: 4px; }
+  .vehicle-box p { color: #555; font-size: 11px; }
+
+  h3 { font-size: 13px; font-weight: bold; margin: 20px 0 8px; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th { background: #1d4ed8; color: white; text-align: left; padding: 7px 10px; font-size: 11px; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+  tr:nth-child(even) td { background: #f9fafb; }
+
+  .severity-bar-wrap { width: 80px; height: 8px; background: #e5e7eb; border-radius: 4px; display: inline-block; vertical-align: middle; }
+  .severity-bar { height: 8px; border-radius: 4px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: bold; }
+  .badge-replace { background: #fee2e2; color: #991b1b; }
+  .badge-repair  { background: #dcfce7; color: #166534; }
+
+  .totals-box { background: #1d4ed8; color: white; padding: 16px 20px; border-radius: 6px; margin: 20px 0; display: flex; gap: 40px; }
+  .totals-box .total-item { text-align: center; }
+  .totals-box .total-label { font-size: 10px; opacity: 0.8; }
+  .totals-box .total-value { font-size: 18px; font-weight: bold; }
+
+  .warnings { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 10px 14px; margin-bottom: 16px; }
+  .warnings p { font-size: 11px; margin-bottom: 4px; color: #92400e; }
+
+  .quality-warnings { background: #fef2f2; border-left: 4px solid #ef4444; padding: 10px 14px; margin-bottom: 16px; }
+  .quality-warnings p { font-size: 11px; margin-bottom: 4px; color: #7f1d1d; }
+
+  .angle-tip { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 8px 12px; margin-bottom: 16px; font-size: 11px; color: #1e40af; }
+
+  .disclaimer { border-top: 1px solid #e5e7eb; margin-top: 24px; padding-top: 12px; font-size: 10px; color: #9ca3af; }
+
+  .pricing-tag { font-size: 9px; color: #6b7280; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Vehicle Damage Assessment</h1>
+    <p style="color:#555;font-size:11px;margin-top:4px;">AI-Powered Estimate Report</p>
+  </div>
+  <div class="meta">
+    <p><strong>Report Date:</strong> {{ report_date }}</p>
+    <p><strong>Upload ID:</strong> {{ upload_id }}</p>
+    {% if estimate_id %}<p><strong>Estimate #:</strong> {{ estimate_id }}</p>{% endif %}
+    <p><strong>Method:</strong> {{ assessment_method | title }}</p>
+  </div>
+</div>
+
+<!-- Vehicle -->
+<div class="vehicle-box">
+  <h2>{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}{% if vehicle.trim %} {{ vehicle.trim }}{% endif %}</h2>
+  <p>
+    {% if vehicle.vin %}VIN: {{ vehicle.vin }} &nbsp;|&nbsp; {% endif %}
+    AI Confidence: {{ (vehicle.confidence * 100) | int }}%
+    {% if vehicle.color %} &nbsp;|&nbsp; Color: {{ vehicle.color }}{% endif %}
+  </p>
+</div>
+
+<!-- Image quality warnings -->
+{% if quality_warnings %}
+<div class="quality-warnings">
+  <strong>⚠ Image Quality Issues</strong>
+  {% for w in quality_warnings %}
+  <p>• {{ w.message }}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Angle guidance -->
+{% if angle_guidance and angle_guidance.angles_missing %}
+<div class="angle-tip">
+  <strong>📷 Photo Coverage:</strong> {{ angle_guidance.suggestion }}
+</div>
+{% endif %}
+
+<!-- Assessment warnings -->
+{% if assessment_warnings %}
+<div class="warnings">
+  <strong>⚠ Assessment Flags (manual review recommended)</strong>
+  {% for w in assessment_warnings %}
+  <p>• {{ w }}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Damage table -->
+<h3>Damage Assessment</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Damage Type</th>
+      <th>Severity</th>
+      <th>Recommendation</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in damages %}
+    <tr>
+      <td>{{ d.component | replace("_", " ") | title }}</td>
+      <td>{{ d.damage_type | title }}</td>
+      <td>
+        <div class="severity-bar-wrap">
+          <div class="severity-bar" style="width:{{ (d.severity * 100) | int }}%;background:{% if d.severity >= 0.6 %}#ef4444{% elif d.severity >= 0.3 %}#f59e0b{% else %}#22c55e{% endif %};"></div>
+        </div>
+        &nbsp;{{ "%.0f" | format(d.severity * 100) }}%
+      </td>
+      <td><span class="badge badge-{{ d.recommendation }}">{{ d.recommendation | upper }}</span></td>
+      <td>{{ d.description }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Cost table -->
+<h3>Cost Breakdown</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Parts (Low)</th>
+      <th>Parts (Avg)</th>
+      <th>Parts (High)</th>
+      <th>Labor Hrs</th>
+      <th>Labor Cost</th>
+      <th>Total (Avg)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in cost_estimates %}
+    <tr>
+      <td>
+        {{ c.component | replace("_", " ") | title }}
+        <br><span class="pricing-tag">{{ c.pricing_method | replace("_", " ") }}</span>
+      </td>
+      <td>${{ "%.0f" | format(c.part_cost_low | float) }}</td>
+      <td>${{ "%.0f" | format(c.part_cost_avg | float) }}</td>
+      <td>${{ "%.0f" | format(c.part_cost_high | float) }}</td>
+      <td>{{ c.labor_hours }}</td>
+      <td>${{ "%.0f" | format(c.labor_cost | float) }}</td>
+      <td><strong>${{ "%.0f" | format(c.total_avg | float) }}</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Totals -->
+<div class="totals-box">
+  <div class="total-item">
+    <div class="total-label">PARTS TOTAL</div>
+    <div class="total-value">${{ "%.0f" | format(totals.parts_total | float) }}</div>
+  </div>
+  <div class="total-item">
+    <div class="total-label">LABOR TOTAL</div>
+    <div class="total-value">${{ "%.0f" | format(totals.labor_total | float) }}</div>
+  </div>
+  <div class="total-item">
+    <div class="total-label">GRAND TOTAL</div>
+    <div class="total-value">${{ "%.0f" | format(totals.grand_total | float) }}</div>
+  </div>
+</div>
+
+<div class="disclaimer">
+  <strong>Disclaimer:</strong> {{ disclaimer }}
+  This report was generated by AI and is intended as a preliminary estimate only.
+  Final repair costs must be verified by a qualified automotive technician.
+</div>
+
+</body>
+</html>

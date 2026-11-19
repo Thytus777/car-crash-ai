@@ -9,29 +9,25 @@ An AI-powered system that accepts multiple images of a vehicle after an accident
 ## High-Level Flow
 
 ```
-User uploads images
+User uploads images (Next.js)
         │
         ▼
 ┌─────────────────────┐
-│  Image Preprocessing │  ← validate, resize, normalize
+│  Image Preprocessing │  ← validate, resize, blur/brightness check
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
-│ Vehicle Identification│  ← AI detection OR user prompt fallback
+│ Vehicle Identification│  ← VIN decode (NHTSA) OR vision LLM
 │ (make, model, year)  │
 └────────┬────────────┘
          │
          ▼
-┌─────────────────────────┐
-│ Damage Detection &       │
-│ Component Classification │  ← per-component severity 0.0–1.0
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│ Repair / Replace Logic   │  ← severity > 0.3 → replace; ≤ 0.3 → repair
-└────────┬────────────────┘
+┌──────────────────────────┐
+│ Damage Detection          │
+│ Zone passes OR consensus  │  ← per-component severity 0.0–1.0
+│ Calibrated thresholds     │     calibrated per component type
+└────────┬─────────────────┘
          │
          ▼
 ┌─────────────────────────┐
@@ -40,7 +36,12 @@ User uploads images
          │
          ▼
 ┌─────────────────────────┐
-│ Report Generation        │  ← structured JSON + human-readable PDF/HTML
+│ Sanity Check             │  ← second LLM pass reviews full report
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Persist + Report         │  ← PostgreSQL + PDF/HTML via WeasyPrint
 └─────────────────────────┘
 ```
 
@@ -50,365 +51,273 @@ User uploads images
 
 **What it does:** Accept 1–10 images of the damaged vehicle (front, rear, sides, close-ups).
 
-**Details:**
+**Implemented:**
 - Supported formats: JPEG, PNG, HEIC (convert HEIC → JPEG on ingest)
 - Validate: minimum resolution (640×480), file size limits (≤ 20 MB each)
-- Resize to a consistent resolution for the model (e.g., 1024×1024)
-- Store originals in cloud storage (S3/Azure Blob) for audit trail
+- Resize to 1024×1024 using LANCZOS resampling
+- Blur detection via `ImageFilter.FIND_EDGES` + variance (threshold 80.0)
+- Brightness check via `ImageStat.Stat` mean (dark < 50, overexposed > 220)
+- Angle guidance heuristic (image count vs. expected 4 angles)
+- Quality warnings returned in upload response
 
-**Tech:** Python with Pillow / OpenCV for preprocessing.
+**Tech:** Python + Pillow (`backend/app/services/image_proc.py`)
 
 ---
 
 ## 2. Vehicle Identification
 
-**What it does:** Determine the make, model, year, and trim of the vehicle.
+**What it does:** Determine the make, model, and year of the vehicle.
 
-**Approach — Two Paths (try AI first, fall back to user):**
+**Implemented — Two Paths:**
 
-### Path A — Vision AI Auto-Detection
-- Send one or more clear images to a Vision LLM (GPT-4 Vision, Claude Vision, or Gemini)
-- Prompt: *"Identify the make, model, approximate year, and body style of this vehicle."*
-- Parse structured response (JSON)
-- Confidence threshold: if the model returns confidence < 0.7, fall back to Path B
+### Path A — VIN Decode (preferred)
+- User provides 17-char VIN in the analyze request
+- `vin_decoder.py` calls NHTSA vPIC API (free, no key)
+- Returns `Vehicle` with `confidence=1.0`
+- Falls back to Path B on `VINDecodeError`
 
-### Path B — User Prompt Fallback
-- Ask the user: "We couldn't confidently identify your vehicle. Please provide: Make, Model, Year"
-- Validate against a known vehicle database (NHTSA VIN decoder API is free, or use a static dataset)
+### Path B — Vision AI Auto-Detection
+- Photos sent to Gemini/OpenAI vision model
+- If confidence < 0.70: `vehicle_confirmation_needed=True` in response, user fills in make/model/year
 
-**Why this matters:** Vehicle identity determines part catalog, part prices, and labor rates.
-
-**Data sources for vehicle data:**
-| Source | Cost | Notes |
-|--------|------|-------|
-| NHTSA VIN Decoder API | Free | Decode VIN → make/model/year |
-| CarMD API | Paid | Vehicle data + common repairs |
-| Static dataset (Kaggle) | Free | Offline reference |
+**Tech:** `backend/app/services/vin_decoder.py`, `backend/app/services/vehicle_id.py`
 
 ---
 
 ## 3. Damage Detection & Severity Scoring
 
-**What it does:** Identify which components are damaged and score severity from 0.0 (no damage) to 1.0 (destroyed).
+**What it does:** Identify which components are damaged and score severity from 0.0 to 1.0.
 
-### Components to Detect
+### Zone-based Passes (default)
+
+Three focused LLM passes, each with a constrained component list:
+
 | Zone | Components |
 |------|-----------|
-| Front | Front bumper, hood, grille, headlights (L/R), fenders (L/R), windshield |
-| Side | Doors (FL/FR/RL/RR), side mirrors (L/R), rocker panels, quarter panels |
-| Rear | Rear bumper, trunk/tailgate, taillights (L/R), rear windshield |
-| Structural | Frame, A/B/C pillars, roof, undercarriage |
-| Other | Wheels/tires, suspension (visible), exhaust |
+| Front | front_bumper, hood, grille, headlights (L/R), front fenders (L/R), windshield_front, a_pillars |
+| Rear | rear_bumper, trunk, taillights (L/R), quarter panels (L/R), windshield_rear |
+| Side | all doors (FL/FR/RL/RR), mirrors (L/R), rocker panels, b_pillars, roof, all wheels |
 
-### Approach — Vision LLM (Chosen)
+Results merged by worst severity per component.
 
-Use GPT-4 Vision / Claude Vision / Gemini with structured output prompting:
+### Consensus Mode (optional, `use_consensus=true`)
 
-```
-Prompt: "Analyze these images of a damaged vehicle. For each damaged
-component, provide:
-- component_name (from standard list)
-- damage_type (scratch, dent, crack, shatter, crush, deformation)
-- severity (0.0 to 1.0)
-- description (brief)
-Return as JSON array."
-```
+Runs Gemini and OpenAI in parallel via `asyncio.gather`. Averages severity scores; flags divergence ≥ 0.25. The higher-severity source's damage type and description are used.
 
-**Pros:** No training data needed, handles varied angles, produces structured output.
-**Cons:** API costs (~$0.01–0.05 per image), non-deterministic, needs prompt tuning.
+### Calibrated Per-Component Thresholds
 
-> **Future upgrade path:** Once we have enough labeled data from real assessments, train a
-> YOLOv8 model for fast damage region detection and feed those crops into the Vision LLM
-> for detailed severity scoring (hybrid approach).
+| Component type | Replace threshold | Rationale |
+|----------------|------------------|-----------|
+| Structural (a_pillar, frame) | 0.20 | Safety critical |
+| Glass (windshields) | 0.15 | Safety critical |
+| Safety lighting | 0.20 | Legal requirement |
+| Cosmetic panels (doors, hood) | 0.35 | Industry standard |
+| Rocker panels | 0.40 | Cosmetic, hard to access |
 
-### Severity Scale & Recommendations
+### Severity Scale
 
 | Severity | Description | Recommendation |
 |----------|-------------|----------------|
-| 0.0–0.1 | Cosmetic (light scratch, scuff) | Minor repair / buff out |
-| 0.1–0.3 | Minor (small dent, paint chip) | Repair (PDR, touch-up paint) |
-| 0.3–0.6 | Moderate (significant dent, crack) | **Replace recommended** |
-| 0.6–0.8 | Severe (large deformation, shattered) | **Replace required** |
-| 0.8–1.0 | Destroyed (component non-functional) | **Replace required** |
+| 0.0–0.1 | Cosmetic (light scratch) | Minor repair |
+| 0.1–0.3 | Minor (small dent, chip) | Repair |
+| 0.3–0.6 | Moderate (significant damage) | Replace recommended |
+| 0.6–0.8 | Severe (large deformation) | Replace required |
+| 0.8–1.0 | Destroyed | Replace required |
 
-> **Decision threshold:** severity > 0.3 → recommend replacement; ≤ 0.3 → recommend repair.
-
----
-
-## 4. Cost Estimation
-
-**What it does:** Estimate the total repair cost broken into: part cost + labor cost.
-
-### Part Replacement Pricing — Live Web Search Pipeline (Chosen)
-
-No single parts database covers every vehicle. Instead, we search the web in real-time,
-fetch the top results, and use AI to extract structured pricing data.
-
-#### Architecture: Search → Fetch → Extract
-
-```
-Backend receives:  "Toyota Corolla 2018 front bumper"
-        │
-        ▼
-┌──────────────────────────┐
-│ Step 1 — Search API       │  SerpAPI / Google Custom Search / Bing Search API
-│                           │  Query: "{year} {make} {model} {component} price buy"
-│                           │  Returns: top 5 result URLs + snippets
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ Step 2 — Fetch & Clean    │  httpx GET each result URL
-│                           │  Strip scripts/styles with BeautifulSoup or trafilatura
-│                           │  Extract: title, price-like text, product descriptions
-│                           │  Timeout: 5s per page, skip failures
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ Step 3 — AI Price Extract │  Send cleaned snippets to LLM
-│                           │  "Extract the product price, currency, and whether
-│                           │   it's OEM or aftermarket from this text."
-│                           │  Returns structured JSON per result
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│ Step 4 — Aggregate        │  Collect prices from all results
-│                           │  Return: { low, avg, high, currency, sources[] }
-│                           │  Cache result for 24 hours
-└──────────────────────────┘
-```
-
-#### Search API Options
-
-| Provider | Free Tier | Paid | Notes |
-|----------|-----------|------|-------|
-| **SerpAPI** | 100 searches/mo | $50/mo for 5,000 | Best structured results, Google/Bing |
-| **Google Custom Search API** | 100/day free | $5 per 1,000 | Requires Custom Search Engine setup |
-| **Bing Web Search API** | 1,000/mo free | Pay-as-you-go | Via Azure, good quality |
-| **SearXNG** (self-hosted) | Unlimited | Free (self-host) | Aggregates multiple engines, no API key |
-
-> **Recommendation:** Start with **SerpAPI** (100 free/mo is enough for development).
-> For production scale, switch to **Bing Search API** (cheapest at volume) or
-> self-host **SearXNG** for zero per-query cost.
-
-#### Page Fetching & Cleaning
-
-```python
-# Fetch with httpx (async, fast)
-async with httpx.AsyncClient(timeout=5.0) as client:
-    response = await client.get(url, follow_redirects=True)
-
-# Clean with trafilatura (best for article/product page extraction)
-import trafilatura
-clean_text = trafilatura.extract(response.text)
-
-# Or BeautifulSoup for more control
-from bs4 import BeautifulSoup
-soup = BeautifulSoup(response.text, "html.parser")
-for tag in soup(["script", "style", "nav", "footer"]):
-    tag.decompose()
-text = soup.get_text(separator="\n", strip=True)
-```
-
-#### AI Price Extraction Prompt
-
-```
-Given the following product page text from {site_domain}, extract pricing info
-for the car part: {year} {make} {model} {component}.
-
-Text:
----
-{cleaned_text[:2000]}
----
-
-Return ONLY valid JSON:
-{
-  "price": <number or null if not found>,
-  "currency": "<3-letter code, e.g. AUD, USD>",
-  "part_type": "<oem | aftermarket | unknown>",
-  "in_stock": <true | false | null>,
-  "product_name": "<exact product name from page>",
-  "confidence": <0.0 to 1.0>
-}
-```
-
-#### Caching & Fallback
-
-- **Cache:** Store search results + extracted prices in the database for 24 hours
-  - Key: `{make}_{model}_{year}_{component}`
-  - Avoids redundant API calls for the same vehicle/part combo
-- **Fallback:** If live search fails (API down, no results, all extractions low-confidence):
-  - Fall back to the static reference database (CSV of average prices)
-  - Flag the estimate as "based on reference data, not live pricing"
-
-#### Static Fallback Database
-
-- File: `backend/app/data/parts_prices.csv`
-- Schema: `make,model,year_start,year_end,component,avg_price,currency,source,last_updated`
-- Covers top 30 vehicles × 20 common parts = 600 rows
-- Updated manually as a baseline safety net
-
-### Labor Cost Estimation
-
-Labor is typically estimated as: `labor_hours × hourly_rate`
-
-- **Labor hours:** Use flat-rate labor guides (e.g., Mitchell, ALLDATA) that define standard hours per repair operation
-- **Hourly rate:** Varies by region ($50–$150/hr in the US). Can use:
-  - User-input location → regional average
-  - Bureau of Labor Statistics (BLS) data for auto body repair wages
-  - Default to national average (~$75/hr) for MVP
-
-**Example estimate structure:**
-```json
-{
-  "vehicle": { "make": "Toyota", "model": "Camry", "year": 2020 },
-  "damages": [
-    {
-      "component": "front_bumper",
-      "severity": 0.75,
-      "recommendation": "replace",
-      "part_cost": { "low": 180, "avg": 250, "high": 350 },
-      "labor_hours": 3.5,
-      "labor_cost": 262.50,
-      "total_estimate": 512.50
-    },
-    {
-      "component": "left_headlight",
-      "severity": 0.85,
-      "recommendation": "replace",
-      "part_cost": { "low": 120, "avg": 200, "high": 400 },
-      "labor_hours": 1.0,
-      "labor_cost": 75.00,
-      "total_estimate": 275.00
-    }
-  ],
-  "totals": {
-    "parts_total": 450.00,
-    "labor_total": 337.50,
-    "grand_total": 787.50
-  }
-}
-```
+**Tech:** `backend/app/services/damage_detect.py`, `backend/app/services/consensus.py`, `backend/app/prompts/damage_assessment.py`
 
 ---
 
-## 5. Tech Stack (Recommended)
+## 4. Sanity Check
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Backend API** | Python + FastAPI | Best ML/AI ecosystem, async, auto-docs |
-| **AI / Vision** | OpenAI GPT-4 Vision | Vehicle ID + damage detection + price extraction |
-| **Search API** | SerpAPI (dev) → Bing Search API (prod) | Legal web search for live part prices |
-| **HTML Parsing** | trafilatura + BeautifulSoup | Clean web pages for AI extraction |
-| **HTTP Client** | httpx (async) | Fetch search results and product pages |
-| **Database** | PostgreSQL + SQLAlchemy | Structured data, price cache, estimates |
-| **Object Storage** | AWS S3 or Azure Blob | Store uploaded images |
-| **Frontend** | Next.js (React) or Streamlit (quick MVP) | Streamlit for internal tool; Next.js for customer-facing |
-| **Task Queue** | Celery + Redis | Async image processing + price lookups |
-| **Deployment** | Docker + AWS ECS or Railway | Containerized, scalable |
+**What it does:** Second LLM pass that reviews the full assembled report for coherence.
+
+**Implemented:**
+- Sends full damage summary + grand total + vehicle info to LLM
+- Checks: cost plausibility, severity consistency, unusual component combinations
+- Returns list of warning strings appended to `assessment_warnings`
+
+**Tech:** `backend/app/services/sanity_check.py`
 
 ---
 
-## 6. Project Phases
+## 5. Cost Estimation
 
-### Phase 1 — MVP (4–6 weeks)
-- [ ] Image upload endpoint (FastAPI)
-- [ ] Vehicle identification via Vision LLM
-- [ ] Damage detection via Vision LLM with structured output
-- [ ] Severity scoring + repair/replace recommendations
-- [ ] Live price search pipeline (SerpAPI → fetch → AI extract)
-- [ ] Static parts price CSV as fallback
-- [ ] Simple labor cost estimation (national average rate)
-- [ ] Basic Streamlit or HTML frontend
-- [ ] JSON report output
+**What it does:** Estimate total repair cost: part cost + labor cost per component.
 
-### Phase 2 — Enhanced (6–8 weeks)
-- [ ] Price result caching (24hr TTL in PostgreSQL)
-- [ ] Regional labor rate adjustment
-- [ ] PDF report generation
-- [ ] User accounts + estimate history
-- [ ] Image annotation (highlight damaged areas on the image)
-- [ ] VIN decoder integration for precise vehicle identification
+### Part Pricing Cascade
 
-### Phase 3 — Production (8–12 weeks)
+| Priority | Method | Source |
+|----------|--------|--------|
+| 1st | **Live search** | SerpAPI → httpx fetch → AI price extraction |
+| 2nd | **Static CSV** | `backend/app/data/parts_prices.csv` |
+| 3rd | **AI estimate** | LLM estimates by vehicle market segment |
+
+### Labor Cost
+
+`labor_hours × labor_rate` where rate defaults to $75/hr (configurable via `.env`). Labor hours come from a static lookup dict in `cost_estimate.py`.
+
+**Tech:** `backend/app/services/cost_estimate.py`, `backend/app/services/price_search.py`
+
+---
+
+## 6. Report Generation
+
+**What it does:** Produce a human-readable PDF report.
+
+**Implemented:**
+- `report_pdf.py` renders `templates/report.html` via Jinja2
+- WeasyPrint converts HTML → PDF; returns HTML bytes if WeasyPrint unavailable
+- `GET /api/v1/report/{estimate_id}` endpoint
+- Report includes: severity bars, cost table, totals, all warnings, disclaimer
+
+**Tech:** `backend/app/services/report_pdf.py`, `backend/app/templates/report.html`
+
+---
+
+## 7. Project Phases
+
+### Phase 0 — Pre-YOLO Reliability ✅ DONE
+
+Improvements that increase accuracy without requiring training data:
+
+- [x] Zone-based damage prompts (3 focused passes instead of 1 broad prompt)
+- [x] Multi-model consensus mode (dual provider parallel runs)
+- [x] Calibrated per-component replace/repair thresholds
+- [x] Image quality gates (blur + brightness detection)
+- [x] Second-pass sanity check on assembled report
+
+### Phase 1 — Production Foundation ✅ DONE
+
+- [x] PostgreSQL + SQLAlchemy async + Alembic migrations (`feature/phase1-database`)
+- [x] Docker + docker-compose with PostgreSQL service (`feature/phase1-docker`)
+- [x] PDF report generation via WeasyPrint + Jinja2 (`feature/phase1-pdf-reports`)
+- [x] Next.js 15 + React 19 + TypeScript + Tailwind frontend scaffold (`feature/phase1-nextjs-frontend`)
+- [x] Estimate history endpoints (`GET /api/v1/estimates`, `GET /api/v1/estimates/{id}`)
+- [x] Fail-safe DB persistence (response returned even on DB error)
+- [x] Image quality warnings in upload response
+- [x] Angle guidance heuristic
+
+### Phase 2 — AI Accuracy + Vehicle Data ✅ PARTIALLY DONE
+
+- [x] VIN decoder integration — NHTSA vPIC API, free, no key (`feature/phase2-vin-decoder`)
+- [x] Consensus mode — dual-provider parallel assessment
+- [ ] Regional labor rate adjustment (use user location → BLS data)
+- [ ] User accounts + authentication (JWT)
+- [ ] Accuracy validation loop (compare estimates to real invoices)
+- [ ] Image annotation (highlight damaged regions with bounding boxes)
+
+### Phase 3 — Production Scale (planned)
+
 - [ ] Custom YOLO model trained on car damage dataset
-- [ ] Hybrid approach (YOLO detection + LLM assessment)
+- [ ] Hybrid approach (YOLO region detection + LLM severity scoring per crop)
 - [ ] Multi-language support
 - [ ] Insurance-grade reporting format
 - [ ] Admin dashboard for price database management
 - [ ] A/B testing for model accuracy improvements
 - [ ] Mobile-responsive frontend or dedicated mobile app
+- [ ] Price result caching (24hr TTL in PostgreSQL)
+- [ ] iOS/Android app
 
 ---
 
-## 7. Key Risks & Mitigations
+## 8. Key Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| Vision LLM inaccuracy on severity | Wrong cost estimates | Calibrate with real assessor data; allow user override |
-| Part price data staleness | Incorrect quotes | Refresh prices periodically; show date of last update |
-| Legal liability of estimates | User relies on incorrect estimate | Add disclaimers: "Estimate only, not a quote" |
-| API cost at scale | High operating cost | Migrate to custom models in Phase 3 |
-| Poor image quality | Bad analysis | Validate image quality on upload; guide user on photo angles |
+| Vision LLM inaccuracy on severity | Wrong cost estimates | Zone prompts + consensus mode + per-component thresholds + sanity check |
+| Part price data staleness | Incorrect quotes | Live search first; show pricing method in response |
+| Legal liability of estimates | User relies on incorrect estimate | Disclaimer on every report: "Estimate only, not a quote" |
+| API cost at scale | High operating cost | Migrate to YOLO hybrid in Phase 3; consensus mode is opt-in |
+| Poor image quality | Bad analysis | Blur/brightness gates at upload; angle guidance in response |
+| DB failure blocking response | Loss of estimate data | Fail-safe pattern — DB write in try/except, response always returned |
 
 ---
 
-## 8. Directory Structure (Planned)
+## 9. Directory Structure (Current)
 
 ```
 car-crash-ai/
-├── .agents/                    # Amp agent configuration
-│   ├── AGENTS.md
-│   └── skills/
+├── AGENTS.md                       # AI agent instructions + skill invocation guide
+├── PROJECT_PLAN.md                 # This file
+├── TECHSTACK.md                    # Technology reference
+├── LEARNING.md                     # Concepts guide for new contributors
+├── docker-compose.yml              # PostgreSQL + backend services
 ├── backend/
-│   ├── app/
-│   │   ├── main.py             # FastAPI entry point
-│   │   ├── api/
-│   │   │   ├── routes/
-│   │   │   │   ├── upload.py   # Image upload endpoints
-│   │   │   │   ├── analysis.py # Damage analysis endpoints
-│   │   │   │   └── estimate.py # Cost estimation endpoints
-│   │   │   └── deps.py         # Shared dependencies
-│   │   ├── core/
-│   │   │   ├── config.py       # App configuration
-│   │   │   └── security.py     # API key management
-│   │   ├── models/
-│   │   │   ├── vehicle.py      # Vehicle data models
-│   │   │   ├── damage.py       # Damage assessment models
-│   │   │   └── estimate.py     # Cost estimate models
-│   │   ├── services/
-│   │   │   ├── vehicle_id.py   # Vehicle identification service
-│   │   │   ├── damage_detect.py# Damage detection service
-│   │   │   ├── cost_estimate.py# Cost estimation service
-│   │   │   └── image_proc.py   # Image preprocessing
-│   │   └── data/
-│   │       └── parts_prices.csv# Static parts price reference
-│   ├── tests/
-│   │   ├── test_upload.py
-│   │   ├── test_analysis.py
-│   │   └── test_estimate.py
+│   ├── Dockerfile
 │   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/                   # Next.js or Streamlit
-│   ├── ...
-├── ml/                         # ML training (Phase 3)
-│   ├── data/
-│   ├── notebooks/
-│   └── train.py
-├── docker-compose.yml
-├── PROJECT_PLAN.md
-└── README.md
+│   ├── alembic/
+│   │   └── versions/
+│   │       └── 001_initial_schema.py
+│   └── app/
+│       ├── main.py
+│       ├── core/
+│       │   ├── config.py           # Settings (includes database_url)
+│       │   └── llm.py              # LLM abstraction (vision, text, dual_vision)
+│       ├── api/routes/
+│       │   ├── upload.py           # POST /upload
+│       │   ├── analysis.py         # POST /analyze (VIN + zone/consensus + sanity)
+│       │   ├── estimate.py         # GET /estimate/{id}
+│       │   ├── estimates.py        # GET /estimates
+│       │   └── report.py           # GET /report/{id} (PDF)
+│       ├── db/
+│       │   ├── session.py          # AsyncSession, get_db dependency
+│       │   └── models.py           # UploadSession, EstimateRecord ORM models
+│       ├── models/
+│       │   ├── vehicle.py          # Vehicle (with vin field)
+│       │   ├── damage.py           # DamageItem, DamageAssessment, ImageQualityWarning
+│       │   └── estimate.py         # CostEstimate, AssessmentReport (with assessment_warnings)
+│       ├── services/
+│       │   ├── image_proc.py       # Upload processing + quality checks
+│       │   ├── vehicle_id.py       # Vision-based vehicle identification
+│       │   ├── vin_decoder.py      # NHTSA VIN decode
+│       │   ├── damage_detect.py    # Zone-based damage detection
+│       │   ├── consensus.py        # Dual-provider consensus merge
+│       │   ├── sanity_check.py     # Post-report coherence check
+│       │   ├── cost_estimate.py    # Part + labor cost calculation
+│       │   ├── price_search.py     # Live web price search pipeline
+│       │   └── report_pdf.py       # Jinja2 + WeasyPrint PDF generation
+│       ├── prompts/
+│       │   ├── vehicle_identification.py
+│       │   └── damage_assessment.py  # Zone prompts + ALL_ZONES dict
+│       └── templates/
+│           └── report.html           # Jinja2 PDF report template
+├── frontend-next/
+│   ├── app/
+│   │   ├── page.tsx                # Upload + analysis stage machine
+│   │   └── history/page.tsx        # Estimate history table
+│   ├── components/
+│   │   ├── UploadZone.tsx          # Drag-and-drop upload
+│   │   └── DamageReport.tsx        # Report display + PDF download
+│   ├── lib/
+│   │   └── api.ts                  # TypeScript API client
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   └── package.json
+└── frontend/                       # Legacy Streamlit frontend (prototype)
+    └── streamlit_app.py
 ```
 
 ---
 
-## 9. Getting Started (Next Steps)
+## 10. Environment Setup
 
-1. **Set up the Python backend** — FastAPI skeleton with image upload
-2. **Integrate a Vision LLM** — Start with OpenAI GPT-4 Vision for both vehicle ID and damage detection
-3. **Build the prompt engineering** — Iterate on prompts to get reliable structured JSON output
-4. **Create the static parts database** — Research prices for common vehicles/parts
-5. **Build a minimal frontend** — Streamlit for rapid iteration
-6. **Test with real crash images** — Validate accuracy, tune severity thresholds
+```bash
+# 1. Copy env file and add API keys
+cp backend/.env.example backend/.env
+# Edit: GEMINI_API_KEY, OPENAI_API_KEY (optional), SERPAPI_KEY
+
+# 2. Start services via Docker
+docker-compose up --build
+
+# 3. Run migrations (if running backend locally instead of Docker)
+cd backend && alembic upgrade head
+
+# 4. Install frontend dependencies
+cd frontend-next && npm install && npm run dev
+
+# 5. Run backend tests
+cd backend && python -m pytest tests/ -v
+```
+
+Backend API docs available at `http://localhost:8000/docs` once running.

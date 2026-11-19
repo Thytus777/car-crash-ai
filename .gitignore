@@ -36,3 +36,13 @@ htmlcov/
 
 # Ruff
 .ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.env*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
