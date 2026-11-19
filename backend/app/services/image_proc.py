@@ -3,6 +3,7 @@
 Validates, resizes, stores, and quality-checks uploaded images.
 """
 
+import asyncio
 import json
 import re
 import statistics
@@ -133,6 +134,32 @@ def _ensure_upload_dir(upload_id: str) -> Path:
     return upload_dir
 
 
+def _prepare_image(
+    filename: str, data: bytes, upload_dir: Path
+) -> tuple[ProcessedImage, list[ImageQualityWarning]]:
+    """Validate, quality-check, normalise to RGB JPEG and save one image."""
+    img = _validate_image(data, filename)
+    warnings = check_image_quality(img, filename)
+
+    if img.mode != "RGB":  # JPEG can't store alpha, palette or 16-bit modes
+        img = img.convert("RGB")
+    img = _resize_image(img)
+
+    image_id = uuid.uuid4().hex[:8]
+    save_path = upload_dir / f"{image_id}.jpg"
+    img.save(save_path, format="JPEG", quality=90)
+
+    processed = ProcessedImage(
+        image_id=image_id,
+        original_filename=filename,
+        saved_path=save_path,
+        width=img.size[0],
+        height=img.size[1],
+        file_size_bytes=save_path.stat().st_size,
+    )
+    return processed, warnings
+
+
 async def process_upload(
     files: list[tuple[str, bytes, str]],
 ) -> tuple[str, list[ProcessedImage], list[ImageQualityWarning]]:
@@ -156,29 +183,12 @@ async def process_upload(
     all_warnings: list[ImageQualityWarning] = []
 
     for filename, data, _content_type in files:
-        img = _validate_image(data, filename)
-        all_warnings.extend(check_image_quality(img, filename))
-
-        if img.mode == "RGBA":
-            img = img.convert("RGB")
-
-        img = _resize_image(img)
-
-        image_id = uuid.uuid4().hex[:8]
-        save_name = f"{image_id}.jpg"
-        save_path = upload_dir / save_name
-        img.save(save_path, format="JPEG", quality=90)
-
-        results.append(
-            ProcessedImage(
-                image_id=image_id,
-                original_filename=filename,
-                saved_path=save_path,
-                width=img.size[0],
-                height=img.size[1],
-                file_size_bytes=save_path.stat().st_size,
-            )
+        # Pillow decode/resize/encode is CPU-bound; keep it off the event loop.
+        processed, warnings = await asyncio.to_thread(
+            _prepare_image, filename, data, upload_dir
         )
+        results.append(processed)
+        all_warnings.extend(warnings)
 
     (upload_dir / _QUALITY_FILE).write_text(
         json.dumps([w.model_dump() for w in all_warnings])

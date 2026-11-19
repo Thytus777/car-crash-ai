@@ -90,3 +90,39 @@ async def test_uploaded_images_saved_to_disk(client: AsyncClient) -> None:
     assert upload_dir.exists()
     saved_files = list(upload_dir.glob("*.jpg"))
     assert len(saved_files) == 1
+
+
+async def test_image_processing_runs_off_the_event_loop(client: AsyncClient) -> None:
+    """Regression for #11: Pillow decode/resize blocked the event loop."""
+    import threading
+    from unittest.mock import patch
+
+    from app.services import image_proc
+
+    threads: list[str] = []
+    real = image_proc._prepare_image
+
+    def spy(*args: object, **kwargs: object) -> object:
+        threads.append(threading.current_thread().name)
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(image_proc, "_prepare_image", side_effect=spy):
+        response = await client.post(
+            "/api/v1/upload",
+            files=[("images", ("a.jpg", _make_test_image(), "image/jpeg"))],
+        )
+
+    assert response.status_code == 200
+    assert threads and threading.main_thread().name not in threads
+
+
+async def test_palette_png_is_accepted(client: AsyncClient) -> None:
+    """Regression for #11: only RGBA was converted, so mode-P PNGs crashed JPEG save."""
+    buf = BytesIO()
+    Image.new("P", (800, 600), color=3).save(buf, format="PNG")
+
+    response = await client.post(
+        "/api/v1/upload", files=[("images", ("p.png", buf.getvalue(), "image/png"))]
+    )
+
+    assert response.status_code == 200
