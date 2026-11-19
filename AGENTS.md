@@ -13,6 +13,7 @@ Car Crash AI: crash photos go in, a vision LLM identifies damaged components, an
   - `app/db/`: SQLAlchemy + Alembic
 - `frontend-next/`: Next.js app, the primary client.
 - `frontend/`: Streamlit demo (`streamlit_app.py`) on top of `api_client.py`, which holds the HTTP calls with no Streamlit dependency. Tests drive `api_client` against the real app through `TestClient`, so the demo can't drift from the API.
+- `evals/`: dataset, taxonomy and results; the harness code is in `backend/evals/`.
 - `docs/adr/`: architecture decision records. Read the relevant one before reversing a decision, and add one (copy `0000-template.md`) for any decision a reviewer would ask "why?" about.
 - The standalone iOS app was retired (ADR 0001). The code is in tag `archive/ios-standalone`.
 
@@ -58,7 +59,7 @@ Gotchas:
 - Every bug fix lands with a regression test that goes **red** before the fix and green after.
 - Fake the LLM with `tests/llm_fakes.py`: `ScriptedClient` replays replies and errors for policy tests, and `llm_result()` wraps an output for patched `generate` calls. The SDKs send over `httpx2`, which respx can't intercept, so mock at the `ProviderClient` seam.
 - The coverage floor is `COV_MIN` in the `Makefile`. It only moves up. The target is 80% (#14).
-- Evals do not exist yet (#15). Until they do, any prompt or model change is unmeasured; say so in the PR.
+- Evals: the labelled dataset lives in `evals/dataset/` (format: `backend/evals/schema.py`, guide: `evals/LABELLING.md`). Labels come only from a person. Never write or edit `label.json` content yourself, and never invent cases; test the harness with synthetic fixtures in `tmp_path`. `make eval-validate` checks the dataset.
 
 ## Git workflow
 

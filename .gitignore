@@ -58,3 +58,7 @@ frontend-next/next-env.d.ts
 
 # Local agent settings
 .claude/settings.local.json
+
+# Eval images that may not be redistributed, and the model-response cache
+evals/local_images/
+evals/.cache/

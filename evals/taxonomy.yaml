@@ -1,0 +1,106 @@
+# Fixed label taxonomy. Generated from the code; tests/unit/test_eval_dataset.py
+# fails if it drifts. Edit app/models/damage.py or evals/schema.py, not this file.
+components:
+- name: front_bumper
+  zone: front
+- name: rear_bumper
+  zone: rear
+- name: hood
+  zone: front
+- name: trunk
+  zone: rear
+- name: grille
+  zone: front
+- name: headlight_left
+  zone: front
+- name: headlight_right
+  zone: front
+- name: taillight_left
+  zone: rear
+- name: taillight_right
+  zone: rear
+- name: fender_front_left
+  zone: front
+- name: fender_front_right
+  zone: front
+- name: door_front_left
+  zone: side
+- name: door_front_right
+  zone: side
+- name: door_rear_left
+  zone: side
+- name: door_rear_right
+  zone: side
+- name: mirror_left
+  zone: side
+- name: mirror_right
+  zone: side
+- name: quarter_panel_left
+  zone: rear
+- name: quarter_panel_right
+  zone: rear
+- name: rocker_panel_left
+  zone: side
+- name: rocker_panel_right
+  zone: side
+- name: windshield_front
+  zone: front
+- name: windshield_rear
+  zone: rear
+- name: roof
+  zone: side
+- name: a_pillar_left
+  zone: front
+- name: a_pillar_right
+  zone: front
+- name: b_pillar_left
+  zone: side
+- name: b_pillar_right
+  zone: side
+- name: wheel_front_left
+  zone: side
+- name: wheel_front_right
+  zone: side
+- name: wheel_rear_left
+  zone: side
+- name: wheel_rear_right
+  zone: side
+damage_types:
+- scratch
+- dent
+- crack
+- shatter
+- crush
+- deformation
+- missing
+severity_levels:
+- level: cosmetic
+  model_score:
+  - 0.0
+  - 0.1
+- level: minor
+  model_score:
+  - 0.1
+  - 0.3
+- level: moderate
+  model_score:
+  - 0.3
+  - 0.6
+- level: severe
+  model_score:
+  - 0.6
+  - 0.8
+- level: destroyed
+  model_score:
+  - 0.8
+  - 1.0
+tags:
+- night
+- glare
+- rain
+- partial_view
+- close_up
+- undamaged
+- non_vehicle
+- multiple_vehicles
+- prompt_injection
