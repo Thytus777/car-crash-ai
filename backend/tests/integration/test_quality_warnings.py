@@ -29,7 +29,7 @@ async def test_dark_photo_warning_is_carried_into_the_report(
             return_value=llm_result(DamageFindings(damages=[])),
         ),
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=[],
         ),

@@ -55,13 +55,13 @@ async def test_components_are_priced_concurrently_up_to_the_limit(
     ]
     with (
         patch(
-            "app.api.routes.analysis.detect_damage",
+            "app.services.assessment.detect_damage",
             new_callable=AsyncMock,
             return_value=DamageAssessment(damages=damages),
         ),
-        patch("app.api.routes.analysis.estimate_cost", side_effect=tracker.wrap(_cost)),
+        patch("app.services.assessment.estimate_cost", side_effect=tracker.wrap(_cost)),
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=[],
         ),

@@ -57,17 +57,17 @@ def pipeline() -> Iterator[None]:
     )
     with (
         patch(
-            "app.api.routes.analysis.detect_damage",
+            "app.services.assessment.detect_damage",
             new_callable=AsyncMock,
             return_value=DamageAssessment(damages=[damage]),
         ),
         patch(
-            "app.api.routes.analysis.estimate_cost",
+            "app.services.assessment.estimate_cost",
             new_callable=AsyncMock,
             return_value=cost,
         ),
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -90,7 +90,7 @@ def test_low_confidence_vehicle_asks_for_confirmation(http: TestClient) -> None:
     uploaded = api_client.upload(http, [("car.jpg", _jpeg(), "image/jpeg")])
     guess = Vehicle(make="Toyota", model="Camry", year=2020, confidence=0.3)
     with patch(
-        "app.api.routes.analysis.identify_vehicle",
+        "app.services.assessment.identify_vehicle",
         new_callable=AsyncMock,
         return_value=guess,
     ):
