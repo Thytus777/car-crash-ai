@@ -66,7 +66,7 @@ def test_next_client_only_calls_paths_in_the_spec() -> None:
 
 @pytest.mark.parametrize(
     ("base_version", "change_contract", "expected"),
-    [("0.2.0", False, 0), ("0.2.0", True, 1), ("0.1.0", True, 0)],
+    [(__version__, False, 0), (__version__, True, 1), ("0.0.1", True, 0)],
 )
 def test_contract_changes_require_a_version_bump(
     tmp_path: Path, base_version: str, change_contract: bool, expected: int
