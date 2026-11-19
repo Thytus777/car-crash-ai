@@ -8,15 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.llm import LLMRateLimitError
 from app.db.models import EstimateRecord
 from app.db.session import get_db
-
-logger = logging.getLogger(__name__)
-from app.models.damage import DamageAssessment
 from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
 from app.services.damage_detect import detect_damage
 from app.services.sanity_check import run_sanity_check
 from app.services.vehicle_id import identify_vehicle, needs_user_input
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

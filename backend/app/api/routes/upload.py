@@ -31,7 +31,9 @@ async def upload_images(images: list[UploadFile]) -> UploadResponse:
     files: list[tuple[str, bytes, str]] = []
     for img_file in images:
         data = await img_file.read()
-        files.append((img_file.filename or "unknown", data, img_file.content_type or ""))
+        files.append(
+            (img_file.filename or "unknown", data, img_file.content_type or "")
+        )
 
     try:
         upload_id, processed, quality_warnings = await process_upload(files)

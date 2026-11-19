@@ -1,5 +1,8 @@
 # Car Crash AI
 
+[![CI](https://github.com/Thytus777/car-crash-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Thytus777/car-crash-ai/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 AI-powered vehicle damage detection and repair cost estimation. Upload photos of a damaged vehicle and get:
 
 - **Vehicle identification** — make, model, year detected automatically
@@ -20,7 +23,7 @@ Built with FastAPI (backend), Streamlit (frontend), and Google Gemini / OpenAI v
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/thytus777/car-crash-ai.git
+git clone https://github.com/Thytus777/car-crash-ai.git
 cd car-crash-ai
 ```
 
@@ -114,8 +117,11 @@ car-crash-ai/
 │   └── requirements.txt       # Python dependencies
 ├── frontend/
 │   └── streamlit_app.py       # Streamlit UI
-├── LEARNING.md                # Detailed guide to all technologies used
-└── SETUP.md                   # Per-feature setup instructions
+└── docs/
+    ├── LEARNING.md             # Detailed guide to all technologies used
+    ├── SETUP.md                # Per-feature setup instructions
+    ├── TECHSTACK.md            # Tech stack rationale
+    └── PROJECT_PLAN.md         # Project plan / roadmap
 ```
 
 ## API Endpoints
