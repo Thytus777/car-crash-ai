@@ -87,6 +87,7 @@ class PriceResult(BaseModel):
     source_url: str
     confidence: float
 
+
 class CostEstimate(BaseModel):
     component: str
     recommendation: Literal["repair", "replace"]

@@ -34,6 +34,7 @@ from fastapi import FastAPI
 
 app = FastAPI(title="Car Crash AI", version="0.1.0")
 
+
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
@@ -65,6 +66,7 @@ Pydantic enforces type validation on Python data structures at runtime. You defi
 ```python
 from pydantic import BaseModel, Field
 
+
 class Vehicle(BaseModel):
     make: str = Field(..., description="Manufacturer (e.g. Toyota)")
     model: str = Field(..., description="Model name (e.g. Camry)")
@@ -81,6 +83,7 @@ class Vehicle(BaseModel):
 **pydantic-settings** — `backend/app/core/config.py`:
 ```python
 from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     model_config = {"env_file": ".env"}
@@ -156,8 +159,8 @@ response = await client.aio.models.generate_content(
 - `response_mime_type="application/json"` — Tells Gemini to return valid JSON directly (no markdown fences to strip)
 - **Thinking model** — Gemini 2.5 Flash is a "thinking" model that uses internal reasoning tokens. These count against `max_output_tokens`, so we pad the budget:
   ```python
-  _GEMINI_TOKEN_PADDING = 8000    # Extra tokens for internal reasoning
-  _GEMINI_THINKING_BUDGET = 512   # Cap on thinking tokens
+  _GEMINI_TOKEN_PADDING = 8000  # Extra tokens for internal reasoning
+  _GEMINI_THINKING_BUDGET = 512  # Cap on thinking tokens
 
   config_kwargs["max_output_tokens"] = max_tokens + _GEMINI_TOKEN_PADDING
   config_kwargs["thinking_config"] = types.ThinkingConfig(
@@ -176,7 +179,7 @@ from openai import AsyncOpenAI
 client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 response = await client.chat.completions.create(
-    model="gpt-4.1-mini",   # Vision tasks
+    model="gpt-4.1-mini",  # Vision tasks
     messages=[{"role": "user", "content": content}],
     max_tokens=max_tokens,
     temperature=temperature,
@@ -192,6 +195,7 @@ Images must be base64-encoded. Gemini accepts raw bytes via `types.Part.from_byt
 ```python
 # Base64 encoding (used by both providers)
 import base64
+
 with open(image_path, "rb") as f:
     img_b64 = base64.b64encode(f.read()).decode("utf-8")
 
@@ -218,8 +222,8 @@ content = [
 The layer automatically retries on rate limits (HTTP 429 / `RESOURCE_EXHAUSTED`):
 
 ```python
-_MAX_RETRIES = 2          # Try up to 3 times total (initial + 2 retries)
-_RETRY_BASE_DELAY = 10    # Seconds between retries (or parsed from error)
+_MAX_RETRIES = 2  # Try up to 3 times total (initial + 2 retries)
+_RETRY_BASE_DELAY = 10  # Seconds between retries (or parsed from error)
 ```
 
 **Fallback flow:**
@@ -306,9 +310,9 @@ from PIL import Image
 from io import BytesIO
 
 img = Image.open(BytesIO(data))  # Load image from bytes
-img.verify()                      # Check it's a valid image (not a corrupted file)
-img = Image.open(BytesIO(data))   # Re-open (verify() exhausts the file pointer)
-width, height = img.size          # Check dimensions >= 640x480
+img.verify()  # Check it's a valid image (not a corrupted file)
+img = Image.open(BytesIO(data))  # Re-open (verify() exhausts the file pointer)
+width, height = img.size  # Check dimensions >= 640x480
 ```
 
 **Why verify() twice?** `img.verify()` checks the file header is valid but makes the image object unusable. So we re-open it for actual processing.
@@ -369,6 +373,7 @@ async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
 **trafilatura** — Extracts readable text from HTML pages, stripping scripts, ads, navigation:
 ```python
 import trafilatura
+
 clean_text = trafilatura.extract(response.text)  # Returns plain text
 ```
 Why trafilatura over BeautifulSoup? It's specifically designed for extracting the "main content" of a page, automatically removing boilerplate (headers, footers, sidebars).
@@ -380,9 +385,9 @@ We send the cleaned text through the LLM abstraction layer's `text_completion()`
 from app.core.llm import text_completion
 
 raw = await text_completion(
-    prompt=prompt,       # Includes vehicle details + scraped page text
+    prompt=prompt,  # Includes vehicle details + scraped page text
     max_tokens=200,
-    temperature=0.1,     # Very deterministic
+    temperature=0.1,  # Very deterministic
 )
 ```
 The LLM returns: `{"price": 249.99, "currency": "USD", "part_type": "aftermarket", "confidence": 0.85}`
@@ -535,17 +540,18 @@ Our app spends most of its time *waiting* — waiting for OpenAI API responses, 
 ```python
 from app.core.llm import vision_completion
 
+
 # This function can "pause" at each `await` and let other work happen
 async def detect_damage(upload_id: str) -> DamageAssessment:
     images_b64 = load_images_as_base64(upload_id)  # Sync (fast, local file read)
-    
+
     # This pauses here while waiting for the LLM (could take 10-30 seconds)
     response = await vision_completion(
         prompt=DAMAGE_PROMPT,
         images_b64=images_b64,
         max_tokens=2000,
     )
-    
+
     # Continues when the response arrives
     return parse_response(response)
 ```
@@ -555,7 +561,7 @@ async def detect_damage(upload_id: str) -> DamageAssessment:
 @router.post("/analyze")
 async def analyze_damage(request: AnalyzeRequest):
     vehicle = await identify_vehicle(request.upload_id)  # Async call
-    damage = await detect_damage(request.upload_id)       # Async call
+    damage = await detect_damage(request.upload_id)  # Async call
     return report
 ```
 
@@ -591,7 +597,9 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
-    google_ai_gemini_api_key: str = ""  # Alternative Gemini key (Google AI Studio format)
+    google_ai_gemini_api_key: str = (
+        ""  # Alternative Gemini key (Google AI Studio format)
+    )
     serpapi_key: str = ""
 ```
 
@@ -624,6 +632,7 @@ backend/tests/
 ```python
 import pytest
 
+
 @pytest.mark.asyncio
 async def test_detect_damage():
     result = await detect_damage("test-upload-id")
@@ -634,14 +643,18 @@ async def test_detect_damage():
 ```python
 from unittest.mock import AsyncMock, patch
 
+
 @pytest.mark.asyncio
 async def test_identify_vehicle():
-    llm_response = json.dumps({
-        "make": "Ford", "model": "Mustang", "year": 2022, "confidence": 0.95
-    })
+    llm_response = json.dumps(
+        {"make": "Ford", "model": "Mustang", "year": 2022, "confidence": 0.95}
+    )
 
     with (
-        patch("app.services.vehicle_id.load_images_as_base64", return_value=["fake_base64"]),
+        patch(
+            "app.services.vehicle_id.load_images_as_base64",
+            return_value=["fake_base64"],
+        ),
         patch(
             "app.services.vehicle_id.vision_completion",
             new_callable=AsyncMock,
