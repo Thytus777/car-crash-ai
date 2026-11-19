@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     max_images_per_request: int = 10
     min_image_width: int = 640
     min_image_height: int = 480
+    # Uploads are stored at up to this long edge (JPEG, STORED_IMAGE_QUALITY)...
+    stored_image_max_edge: int = 1600
+    stored_image_quality: int = 90
+    # ...and downscaled to this when sent to the models. Eval sweeps change
+    # these without re-uploading; both caches key on the bytes actually sent.
+    model_image_max_edge: int = 1024
+    model_image_jpeg_quality: int = 90
 
     cors_origins: list[str] = ["*"]
 
