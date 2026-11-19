@@ -1,4 +1,3 @@
-import shutil
 from io import BytesIO
 
 import pytest
@@ -13,14 +12,6 @@ def _make_test_image(width: int = 800, height: int = 600, fmt: str = "JPEG") -> 
     buf = BytesIO()
     img.save(buf, format=fmt)
     return buf.getvalue()
-
-
-@pytest.fixture(autouse=True)
-def _clean_uploads():
-    """Clean up any uploaded files after each test."""
-    yield
-    if settings.upload_dir.exists():
-        shutil.rmtree(settings.upload_dir)
 
 
 @pytest.mark.asyncio
