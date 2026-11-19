@@ -19,7 +19,11 @@ from app.models.damage import (
 )
 from app.models.llm_outputs import DamageFinding, DamageFindings
 from app.prompts import render
-from app.services.image_proc import assess_angle_coverage, load_images
+from app.services.image_proc import (
+    assess_angle_coverage,
+    load_images,
+    load_quality_warnings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +161,8 @@ async def detect_damage(
         )
         return DamageAssessment(
             damages=items,
+            consensus_flags=consensus_flags,
+            image_quality_warnings=load_quality_warnings(upload_id),
             angle_guidance=angle_guidance,
             assessment_method="consensus",
         )
@@ -176,6 +182,7 @@ async def detect_damage(
     return DamageAssessment(
         damages=_merge_zone_results(succeeded),
         failed_zones=list(failed),
+        image_quality_warnings=load_quality_warnings(upload_id),
         angle_guidance=angle_guidance,
         assessment_method="zone_pass",
     )

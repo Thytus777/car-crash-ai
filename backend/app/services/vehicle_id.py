@@ -48,5 +48,5 @@ def to_vehicle(identified: VehicleIdentification) -> Vehicle:
 
 
 def needs_user_input(vehicle: Vehicle) -> bool:
-    """Check if the AI confidence is too low and user input is needed."""
-    return vehicle.confidence < CONFIDENCE_THRESHOLD
+    """True if the user should confirm: low confidence or an unknown year."""
+    return vehicle.confidence < CONFIDENCE_THRESHOLD or vehicle.year == 0

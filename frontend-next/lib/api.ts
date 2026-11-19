@@ -41,7 +41,7 @@ export interface AssessmentReport {
   damage_assessment: {
     damages: DamageItem[];
     image_quality_warnings: Array<{ message: string }>;
-    angle_guidance?: { angles_missing: string[]; suggestion: string };
+    angle_guidance?: { suggestion: string };
     assessment_method: string;
   };
   cost_estimates: CostEstimate[];

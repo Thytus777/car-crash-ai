@@ -55,3 +55,9 @@ async def test_identify_vehicle_requests_typed_output_with_low_detail() -> None:
     args, kwargs = generate.call_args
     assert args[0] is VehicleIdentification and args[2] == [b"jpeg"]
     assert kwargs["image_detail"] == "low"
+
+
+def test_unknown_year_needs_user_input_even_when_confident() -> None:
+    """Regression for #11: year 0 (unknown) went straight to pricing."""
+    v = Vehicle(make="Toyota", model="Camry", year=0, confidence=0.95)
+    assert needs_user_input(v) is True
