@@ -1,6 +1,5 @@
 """Live price search pipeline — Search API → Fetch → AI Extract → Aggregate."""
 
-import json
 import logging
 from decimal import Decimal
 
@@ -8,8 +7,9 @@ import httpx
 import trafilatura
 
 from app.core.config import settings
-from app.core.llm import text_completion
+from app.core.llm import generate
 from app.models.estimate import PriceResult
+from app.models.llm_outputs import PriceExtraction
 from app.prompts.price_extraction import PRICE_EXTRACTION_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -126,35 +126,29 @@ async def _extract_prices(
         )
 
         try:
-            raw = await text_completion(
-                prompt=prompt,
-                max_tokens=200,
+            result = await generate(
+                PriceExtraction,
+                prompt,
+                task="price_extraction",
+                max_output_tokens=200,
                 temperature=0.1,
             )
-            logger.debug("Price extraction from %s: %s", domain, raw)
-
-            cleaned = raw.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
-                cleaned = cleaned.rsplit("```", 1)[0].strip()
-
-            data = json.loads(cleaned)
-
-            if data.get("price") is not None:
-                results.append(
-                    PriceResult(
-                        price=Decimal(str(data["price"])).quantize(Decimal("0.01")),
-                        currency=data.get("currency", "USD"),
-                        part_type=data.get("part_type", "unknown"),
-                        in_stock=data.get("in_stock"),
-                        product_name=data.get("product_name", ""),
-                        source_url=f"https://{domain}",
-                        confidence=float(data.get("confidence", 0.0)),
-                    )
-                )
-
         except Exception:
             logger.debug("Price extraction failed for %s", domain, exc_info=True)
             continue
+
+        extracted = result.output
+        if extracted.price is not None:
+            results.append(
+                PriceResult(
+                    price=Decimal(str(extracted.price)).quantize(Decimal("0.01")),
+                    currency=extracted.currency,
+                    part_type=extracted.part_type,
+                    in_stock=extracted.in_stock,
+                    product_name=extracted.product_name,
+                    source_url=f"https://{domain}",
+                    confidence=extracted.confidence,
+                )
+            )
 
     return results

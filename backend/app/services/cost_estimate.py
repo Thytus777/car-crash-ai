@@ -1,12 +1,12 @@
 """Cost estimation service — orchestrates live price search + labor calculation."""
 
-import json
 import logging
 from decimal import Decimal
 
-from app.core.llm import text_completion
+from app.core.llm import generate
 from app.models.damage import DamageItem
 from app.models.estimate import CostEstimate, PricingMethod
+from app.models.llm_outputs import PriceEstimate
 from app.models.vehicle import Vehicle
 from app.prompts.price_estimation import PRICE_ESTIMATION_PROMPT
 from app.services.labor import get_labor_cost
@@ -85,27 +85,30 @@ async def _ai_estimate_price(
     )
 
     try:
-        raw = await text_completion(prompt=prompt, max_tokens=200, temperature=0.2)
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
-            cleaned = cleaned.rsplit("```", 1)[0].strip()
-
-        data = json.loads(cleaned)
-        low = Decimal(str(data["price_low"])).quantize(Decimal("0.01"))
-        avg = Decimal(str(data["price_avg"])).quantize(Decimal("0.01"))
-        high = Decimal(str(data["price_high"])).quantize(Decimal("0.01"))
-        logger.info(
-            "AI price estimate for %s %s %d %s: $%s / $%s / $%s",
-            vehicle.make,
-            vehicle.model,
-            vehicle.year,
-            component,
-            low,
-            avg,
-            high,
+        result = await generate(
+            PriceEstimate,
+            prompt,
+            task="price_estimate",
+            max_output_tokens=200,
+            temperature=0.2,
         )
-        return low, avg, high
     except Exception:
         logger.exception("AI price estimation failed, using defaults")
         return Decimal("150.00"), Decimal("300.00"), Decimal("500.00")
+
+    est = result.output
+    low, avg, high = (
+        Decimal(str(v)).quantize(Decimal("0.01"))
+        for v in (est.price_low, est.price_avg, est.price_high)
+    )
+    logger.info(
+        "AI price estimate for %s %s %d %s: $%s / $%s / $%s",
+        vehicle.make,
+        vehicle.model,
+        vehicle.year,
+        component,
+        low,
+        avg,
+        high,
+    )
+    return low, avg, high

@@ -4,11 +4,11 @@ Catches hallucinations like a $15,000 estimate on a cosmetic scratch, or
 structural damage on a vehicle that visually has none.
 """
 
-import json
 import logging
 
-from app.core.llm import text_completion
+from app.core.llm import generate
 from app.models.estimate import AssessmentReport
+from app.models.llm_outputs import SanityReview
 
 logger = logging.getLogger(__name__)
 
@@ -62,27 +62,27 @@ async def run_sanity_check(report: AssessmentReport) -> list[str]:
     )
 
     try:
-        raw = await text_completion(prompt=prompt, max_tokens=400, temperature=0.1)
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
-            cleaned = cleaned.rsplit("```", 1)[0].strip()
-
-        data = json.loads(cleaned)
-        warnings = data.get("warnings", [])
-        if not data.get("looks_reasonable", True) and not warnings:
-            warnings = [
-                "AI flagged this assessment as potentially inconsistent — "
-                "manual review recommended."
-            ]
-
-        logger.info(
-            "Sanity check result: reasonable=%s, warnings=%d",
-            data.get("looks_reasonable"),
-            len(warnings),
+        result = await generate(
+            SanityReview,
+            prompt,
+            task="sanity_check",
+            max_output_tokens=400,
+            temperature=0.1,
         )
-        return [w for w in warnings if w]
-
     except Exception:
         logger.exception("Sanity check failed — skipping")
         return []
+
+    review = result.output
+    warnings = [w for w in review.warnings if w]
+    if not review.looks_reasonable and not warnings:
+        warnings = [
+            "AI flagged this assessment as potentially inconsistent — "
+            "manual review recommended."
+        ]
+    logger.info(
+        "Sanity check result: reasonable=%s, warnings=%d",
+        review.looks_reasonable,
+        len(warnings),
+    )
+    return warnings

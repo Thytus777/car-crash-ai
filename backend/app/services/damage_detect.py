@@ -4,20 +4,20 @@ Zone-based prompts, calibrated thresholds, optional consensus.
 """
 
 import asyncio
-import json
 import logging
+from collections.abc import Sequence
 
 from app.core.config import settings
 from app.core.errors import NotFoundError
-from app.core.llm import vision_completion
+from app.core.llm import generate
 from app.models.damage import (
-    STANDARD_COMPONENTS,
     DamageAssessment,
     DamageItem,
     Recommendation,
 )
+from app.models.llm_outputs import DamageFinding, DamageFindings
 from app.prompts.damage_assessment import ALL_ZONES, build_zone_prompt
-from app.services.image_proc import assess_angle_coverage, load_images_as_base64
+from app.services.image_proc import assess_angle_coverage, load_images
 
 logger = logging.getLogger(__name__)
 
@@ -71,37 +71,23 @@ def _get_threshold(component: str) -> float:
     return COMPONENT_THRESHOLDS.get(component, settings.severity_replace_threshold)
 
 
-def _parse_damage_response(raw_text: str) -> list[DamageItem]:
-    """Parse the LLM JSON response into DamageItems with calibrated thresholds."""
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
-        cleaned = cleaned.rsplit("```", 1)[0].strip()
-
-    data = json.loads(cleaned)
-
+def to_damage_items(findings: Sequence[DamageFinding]) -> list[DamageItem]:
+    """Turn validated findings into DamageItems with a repair/replace call."""
     items: list[DamageItem] = []
-    for entry in data:
-        component = entry.get("component", "")
-        if component not in STANDARD_COMPONENTS:
-            logger.warning("Unknown component '%s', skipping", component)
-            continue
-
-        severity = float(entry.get("severity", 0.0))
-        severity = max(0.0, min(1.0, severity))
-        threshold = _get_threshold(component)
-        recommendation: Recommendation = "replace" if severity > threshold else "repair"
-
+    for finding in findings:
+        threshold = _get_threshold(finding.component)
+        recommendation: Recommendation = (
+            "replace" if finding.severity > threshold else "repair"
+        )
         items.append(
             DamageItem(
-                component=component,
-                damage_type=entry.get("damage_type", "dent"),
-                severity=severity,
-                description=entry.get("description", ""),
+                component=finding.component,
+                damage_type=finding.damage_type,
+                severity=finding.severity,
+                description=finding.description,
                 recommendation=recommendation,
             )
         )
-
     return items
 
 
@@ -122,23 +108,24 @@ def _merge_zone_results(zone_results: list[list[DamageItem]]) -> list[DamageItem
 async def _run_zone_pass(
     zone: str,
     components: list[str],
-    images_b64: list[str],
+    images: Sequence[bytes],
 ) -> list[DamageItem]:
     """Run a single focused zone prompt and parse the result."""
     prompt = build_zone_prompt(zone, components)
     try:
-        raw = await vision_completion(
-            prompt=prompt,
-            images_b64=images_b64,
-            max_tokens=1500,
+        result = await generate(
+            DamageFindings,
+            prompt,
+            images,
+            task=f"damage_{zone}",
+            max_output_tokens=1500,
             temperature=0.2,
-            detail="high",
         )
-        logger.info("Zone '%s' raw response: %s", zone, raw[:200])
-        return _parse_damage_response(raw)
     except Exception:
         logger.exception("Zone pass '%s' failed", zone)
         return []
+    logger.info("Zone '%s': %d finding(s)", zone, len(result.output.damages))
+    return to_damage_items(result.output.damages)
 
 
 async def detect_damage(
@@ -151,11 +138,11 @@ async def detect_damage(
         upload_id: ID returned by the upload endpoint.
         use_consensus: if True, run both LLM providers on each zone and merge.
     """
-    images_b64 = load_images_as_base64(upload_id)
-    if not images_b64:
+    images = load_images(upload_id)
+    if not images:
         raise NotFoundError(f"Upload {upload_id} has no images")
 
-    angle_guidance = assess_angle_coverage(len(images_b64))
+    angle_guidance = assess_angle_coverage(len(images))
 
     if use_consensus:
         from app.prompts.damage_assessment import DAMAGE_ASSESSMENT_PROMPT
@@ -163,7 +150,7 @@ async def detect_damage(
 
         items, consensus_flags = await detect_damage_consensus(
             prompt=DAMAGE_ASSESSMENT_PROMPT,
-            images_b64=images_b64,
+            images=images,
         )
         return DamageAssessment(
             damages=items,
@@ -173,7 +160,7 @@ async def detect_damage(
 
     # Zone-based parallel passes (default)
     zone_tasks = [
-        _run_zone_pass(zone, components, images_b64)
+        _run_zone_pass(zone, components, images)
         for zone, components in ALL_ZONES.items()
     ]
     zone_results = await asyncio.gather(*zone_tasks)

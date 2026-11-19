@@ -15,15 +15,17 @@ severity: float from 0.0 to 1.0 where:
   - 0.8-1.0: destroyed (component non-functional/missing)"""
 
 _JSON_SHAPE = """\
-Return ONLY a valid JSON array (empty array [] if nothing is damaged):
-[
-  {
-    "component": "<component_name>",
-    "damage_type": "<scratch|dent|crack|shatter|crush|deformation|missing>",
-    "severity": 0.0,
-    "description": "<brief description>"
-  }
-]"""
+Return ONLY a valid JSON object ("damages" is an empty array if nothing is damaged):
+{
+  "damages": [
+    {
+      "component": "<component_name>",
+      "damage_type": "<scratch|dent|crack|shatter|crush|deformation|missing>",
+      "severity": 0.0,
+      "description": "<brief description>"
+    }
+  ]
+}"""
 
 # --- Zone component lists ---
 

@@ -9,6 +9,19 @@ class Settings(BaseSettings):
 
     ai_provider: Literal["gemini", "openai"] = "gemini"
     gemini_model: str = "gemini-3.6-flash"
+    openai_vision_model: str = "gpt-4.1-mini"
+    openai_text_model: str = "gpt-4.1-nano"
+    # Gemini "thinking" tokens count against max_output_tokens, so visible
+    # output gets this much extra headroom and thinking is capped separately.
+    gemini_thinking_budget: int = 512
+    gemini_output_token_padding: int = 8000
+
+    # LLM call policy (see app/core/llm.py)
+    llm_timeout_s: float = 45.0  # per attempt
+    llm_max_attempts: int = 3  # transient failures (429/5xx/timeout) per provider
+    llm_max_invalid_outputs: int = 2  # re-asks after schema-invalid output
+    llm_backoff_base_s: float = 1.0
+    llm_backoff_max_s: float = 10.0
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
