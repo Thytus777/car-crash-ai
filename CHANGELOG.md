@@ -41,6 +41,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unused dependencies `beautifulsoup4` and `google-search-results`.
 
 ### Fixed
+- The Next.js "Download PDF" links pointed at the Next.js server instead of the API, so they always returned 404. Downloads now fetch from the API, with the key if one is set.
 - The Streamlit demo called three endpoints removed in an earlier refactor. It now uses `/upload` then `/analyze` and shows the confirmation step, partial-result issues, unpriced parts and the problem `detail` on errors ([#4](https://github.com/Thytus777/car-crash-ai/issues/4)).
 - The vehicle-ID prompt was sent unformatted, so the model saw its JSON example with doubled braces. Prompt v2 fixes it ([#25](https://github.com/Thytus777/car-crash-ai/issues/25)).
 - Failed LLM stages were reported as success: a failed damage zone read as "no damage", a failed price estimate became a made-up $150/$300/$500, and a failed sanity check read as "no concerns". Reports now carry `status` (`complete`/`partial`) and `issues`. Unpriced parts have null costs and are listed in `totals.unpriced_components`, and if every zone fails the request returns 503 ([#3](https://github.com/Thytus777/car-crash-ai/issues/3)).
@@ -49,6 +50,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unexpected errors no longer leak exception text in responses.
 
 ### Security
+- API-key auth (`API_KEYS`; `X-API-Key` or Bearer) on `/api/v1/*` and `/metrics`. Per-client token-bucket rate limits, with a tighter one for `/analyze` (429 `rate-limited` with `Retry-After`). CORS no longer combines `*` with credentials; the defaults are the local dev origins. `APP_ENV=production` refuses to start without keys, with wildcard CORS, or without required redaction. API 0.7.0 ([#9](https://github.com/Thytus777/car-crash-ai/issues/9)).
 - Faces and number plates are blurred at upload, before storage or any model call, using pretrained ONNX detectors: a YOLOv9 plate model and OpenCV YuNet for faces. Both are sha256-pinned and fetched at build time. With `REDACTION_REQUIRED` (the Docker default), uploads are refused and readiness fails if the models are missing. Redacted photos are deleted after 24 h; see `docs/DATA_RETENTION.md` and [ADR 0004](docs/adr/0004-redact-faces-and-plates-at-upload.md) ([#10](https://github.com/Thytus777/car-crash-ai/issues/10)).
 - Uploaded photos are EXIF-rotated before processing.
 - API keys and the database URL are `SecretStr`, so they render as `**********` in reprs, tracebacks and logs. Placeholder values from `.env.example` count as unset, instead of triggering doomed OpenAI fallbacks and SerpAPI calls ([#34](https://github.com/Thytus777/car-crash-ai/issues/34)).

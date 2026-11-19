@@ -20,6 +20,10 @@ Clients should branch on `type` (stable) or `status`, and show `detail` to the u
 - an uploaded file isn't a valid image
 - an image is below the minimum resolution
 
+## unauthorized
+
+**401.** The API has keys configured and the request carried no valid one. Send it as `X-API-Key: <key>` or `Authorization: Bearer <key>`.
+
 ## not-found
 
 **404.** The estimate, upload or route doesn't exist.
@@ -54,6 +58,10 @@ Clients should branch on `type` (stable) or `status`, and show `detail` to the u
 ```json
 { "errors": [{ "loc": ["body", "upload_id"], "msg": "String should match pattern '^[0-9a-f]{12}$'", "type": "string_pattern_mismatch" }] }
 ```
+
+## rate-limited
+
+**429.** This client (API key, or IP when auth is off) exceeded its per-minute limit: `RATE_LIMIT_PER_MINUTE` overall, `ANALYZE_RATE_LIMIT_PER_MINUTE` for `/analyze`. Wait for the `Retry-After` header's number of seconds. This is different from `upstream-rate-limited`, which means the AI provider is rate-limiting *us*.
 
 ## upstream-rate-limited
 
