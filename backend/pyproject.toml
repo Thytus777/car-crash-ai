@@ -22,6 +22,10 @@ dependencies = [
     "jinja2>=3.1.0",
     "weasyprint>=62.0",
     "httpx2>=2.16.2",
+    "opentelemetry-api>=1.45.2",
+    "opentelemetry-sdk>=1.45.2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+    "opentelemetry-instrumentation-fastapi>=0.66b2",
 ]
 
 [dependency-groups]

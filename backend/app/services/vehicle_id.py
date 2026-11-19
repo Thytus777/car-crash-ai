@@ -4,6 +4,7 @@ import logging
 
 from app.core.errors import NotFoundError
 from app.core.llm import generate
+from app.core.tracing import traced
 from app.models.llm_outputs import VehicleIdentification
 from app.models.vehicle import Vehicle
 from app.prompts import render
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 CONFIDENCE_THRESHOLD = 0.7
 
 
+@traced("stage.vehicle_id")
 async def identify_vehicle(upload_id: str) -> Vehicle:
     """Send uploaded images to a Vision LLM to identify the vehicle.
 

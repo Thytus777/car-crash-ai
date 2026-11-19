@@ -6,6 +6,7 @@ import logging
 from contextvars import ContextVar
 
 from app.core.config import settings
+from app.core.tracing import current_trace_ids
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
@@ -40,6 +41,9 @@ class JsonFormatter(logging.Formatter):
                 if k not in _STANDARD and k != "request_id"
             }
         )
+        ids = current_trace_ids()
+        if ids:
+            line["trace_id"], line["span_id"] = ids
         if record.exc_info:
             line["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(line, default=str)

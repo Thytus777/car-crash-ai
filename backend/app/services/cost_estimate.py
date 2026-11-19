@@ -8,6 +8,7 @@ from decimal import Decimal
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.llm import generate
+from app.core.tracing import traced
 from app.models.damage import DamageItem
 from app.models.estimate import CostEstimate, PricingMethod, ReportTotals
 from app.models.llm_outputs import PriceEstimate
@@ -38,6 +39,7 @@ def compute_totals(estimates: Sequence[CostEstimate]) -> ReportTotals:
     )
 
 
+@traced("stage.pricing.component")
 async def estimate_cost(
     vehicle: Vehicle,
     damage: DamageItem,

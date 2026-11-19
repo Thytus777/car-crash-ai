@@ -8,6 +8,7 @@ from app.api.problems import install_problem_handlers
 from app.api.routes import analysis, estimates, report, upload
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.core.tracing import configure_tracing
 from app.prompts import validate_prompts
 
 configure_logging()
@@ -38,3 +39,4 @@ app.include_router(estimates.router, prefix="/api/v1", tags=["history"])
 app.include_router(report.router, prefix="/api/v1", tags=["report"])
 
 app.include_router(observability.router)
+configure_tracing(app)

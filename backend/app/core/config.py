@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # Directory under backend/prompts/; recorded in every analysis response.
     prompt_version: str = "v3"
     log_level: str = "INFO"
+    # e.g. http://otel-collector:4318; empty disables span export.
+    otel_exporter_otlp_endpoint: str = ""
     gemini_model: str = "gemini-3.6-flash"
     openai_vision_model: str = "gpt-4.1-mini"
     openai_text_model: str = "gpt-4.1-nano"

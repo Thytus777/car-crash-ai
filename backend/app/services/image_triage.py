@@ -2,11 +2,13 @@
 
 from app.core.errors import NotFoundError
 from app.core.llm import generate
+from app.core.tracing import traced
 from app.models.llm_outputs import ImageTriage
 from app.prompts import render
 from app.services.image_proc import load_images
 
 
+@traced("stage.triage")
 async def triage_images(upload_id: str) -> ImageTriage:
     """One low-detail look at all images; raises typed LLM errors on failure."""
     images = load_images(upload_id)
