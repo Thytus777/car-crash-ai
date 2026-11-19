@@ -1,201 +1,147 @@
-"""Car Crash AI — Streamlit Frontend"""
+"""Car Crash AI: Streamlit demo (internal). The primary client is frontend-next."""
 
+import os
+from datetime import date
+from typing import Any
+
+import api_client
 import httpx
 import streamlit as st
+from api_client import ApiError, money
 
-API_BASE = "http://localhost:8000/api/v1"
+API_URL = os.environ.get("CAR_CRASH_API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Car Crash AI", page_icon="🚗", layout="wide")
 st.title("🚗 Car Crash Damage Assessment")
-st.markdown(
-    "Upload photos of your damaged vehicle to get an AI-powered damage report and cost estimate."
-)
+st.markdown("Upload photos of a damaged vehicle to get a damage report and estimate.")
 
-# --- Sidebar: Vehicle Info Override ---
+
+@st.cache_resource
+def _client() -> httpx.Client:
+    return httpx.Client(base_url=API_URL, timeout=httpx.Timeout(300.0, connect=10.0))
+
+
+# --- Sidebar: optional vehicle override (also used to confirm a low-confidence ID)
 with st.sidebar:
-    st.header("Vehicle Info (Optional)")
-    st.caption("Leave blank to let AI identify the vehicle automatically.")
-    override_make = st.text_input("Make", placeholder="e.g. Toyota")
-    override_model = st.text_input("Model", placeholder="e.g. Camry")
-    override_year = st.number_input(
-        "Year", min_value=1990, max_value=2026, value=None, step=1
+    st.header("Vehicle (optional)")
+    st.caption("Leave blank to let the AI identify the vehicle.")
+    make = st.text_input("Make", placeholder="e.g. Toyota")
+    model = st.text_input("Model", placeholder="e.g. Camry")
+    year = st.number_input(
+        "Year", min_value=1980, max_value=date.today().year + 1, value=None, step=1
     )
 
-# --- Image Upload ---
-uploaded_files = st.file_uploader(
-    "Upload vehicle images (1–10 photos)",
-    type=["jpg", "jpeg", "png"],
+uploaded = st.file_uploader(
+    "Vehicle photos (1–10)",
+    type=["jpg", "jpeg", "png", "webp"],
     accept_multiple_files=True,
 )
-
-if uploaded_files:
-    cols = st.columns(min(len(uploaded_files), 4))
-    for i, f in enumerate(uploaded_files):
+if uploaded:
+    cols = st.columns(min(len(uploaded), 4))
+    for i, f in enumerate(uploaded):
         cols[i % len(cols)].image(f, caption=f.name, use_container_width=True)
 
-# --- Analyze Button ---
-if st.button("🔍 Analyze Damage", type="primary", disabled=not uploaded_files):
-    with st.spinner("Uploading images..."):
-        files = [("images", (f.name, f.getvalue(), f.type)) for f in uploaded_files]
-        try:
-            upload_resp = httpx.post(f"{API_BASE}/upload", files=files, timeout=30.0)
-            if upload_resp.status_code != 200:
-                detail = upload_resp.json().get("detail", upload_resp.text)
-                st.error(f"Upload failed: {detail}")
-                st.stop()
-            upload_data = upload_resp.json()
-            upload_id = upload_data["upload_id"]
-            st.success(f"✅ Uploaded {upload_data['image_count']} image(s)")
-        except Exception as e:
-            st.error(f"Upload failed: {e}")
-            st.stop()
 
-    def _handle_rate_limit(resp: httpx.Response) -> None:
-        if resp.status_code == 429:
-            detail = resp.json().get("detail", "")
-            st.error(f"⏳ AI rate limit reached: {detail}")
-            st.info(
-                "💡 Tip: Wait a few minutes and try again, or check your API key quotas at https://ai.google.dev/gemini-api/docs/rate-limits"
-            )
-            st.stop()
+def _show_error(step: str, err: ApiError) -> None:
+    st.error(f"{step} failed ({err.status} {err.title}): {err.detail}")
+    if err.status == 429:
+        st.info("The AI provider is rate-limited. Wait a few minutes and retry.")
 
-    def _handle_error(resp: httpx.Response, step: str) -> None:
-        _handle_rate_limit(resp)
-        if resp.status_code != 200:
-            detail = resp.json().get("detail", resp.text)
-            st.error(f"{step} failed: {detail}")
-            st.stop()
 
-    # --- Step 1: Vehicle Identification ---
-    with st.status("🔍 Step 1/3 — Identifying vehicle...", expanded=True) as status:
-        id_payload = {"upload_id": upload_id}
-        if override_make and override_model and override_year:
-            id_payload["make"] = override_make
-            id_payload["model"] = override_model
-            id_payload["year"] = override_year
-
-        try:
-            vehicle_resp = httpx.post(
-                f"{API_BASE}/identify-vehicle", json=id_payload, timeout=120.0
-            )
-            _handle_error(vehicle_resp, "Vehicle identification")
-            vehicle_data = vehicle_resp.json()
-        except Exception as e:
-            st.error(f"Vehicle identification failed: {e}")
-            st.stop()
-
-        if vehicle_data.get("status") == "vehicle_confirmation_needed":
-            guess = vehicle_data["vehicle_guess"]
-            st.warning(vehicle_data["message"])
-            st.info(
-                f"AI guess: **{guess.get('year', '?')} {guess.get('make', '?')} "
-                f"{guess.get('model', '?')}** (confidence: {guess.get('confidence', 0):.0%})"
-            )
-            st.markdown(
-                "Please enter the correct vehicle info in the sidebar and re-run."
-            )
-            st.stop()
-
-        st.write(
-            f"✅ Identified: {vehicle_data.get('year')} {vehicle_data.get('make')} {vehicle_data.get('model')}"
-        )
-        status.update(label="✅ Step 1/3 — Vehicle identified", state="complete")
-
-    # --- Step 2: Damage Detection ---
-    with st.status("🔍 Step 2/3 — Analyzing damage...", expanded=True) as status:
-        try:
-            damage_resp = httpx.post(
-                f"{API_BASE}/detect-damage",
-                json={"upload_id": upload_id},
-                timeout=120.0,
-            )
-            _handle_error(damage_resp, "Damage detection")
-            damage_data = damage_resp.json()
-        except Exception as e:
-            st.error(f"Damage detection failed: {e}")
-            st.stop()
-
-        num_damages = len(damage_data.get("damages", []))
-        st.write(f"✅ Found {num_damages} damaged component(s)")
-        status.update(
-            label=f"✅ Step 2/3 — Found {num_damages} damaged component(s)",
-            state="complete",
+def _render(report: dict[str, Any]) -> None:
+    if report["status"] == "partial":
+        st.warning(
+            "Partial assessment. Some steps could not complete:\n\n"
+            + "\n".join(f"- {issue['detail']}" for issue in report["issues"])
         )
 
-    # --- Step 3: Cost Estimation ---
-    with st.status("💰 Step 3/3 — Estimating repair costs...", expanded=True) as status:
-        try:
-            estimate_resp = httpx.post(
-                f"{API_BASE}/estimate-costs",
-                json={"vehicle": vehicle_data, "damage_assessment": damage_data},
-                timeout=300.0,
-            )
-            _handle_error(estimate_resp, "Cost estimation")
-            report = estimate_resp.json()
-        except Exception as e:
-            st.error(f"Cost estimation failed: {e}")
-            st.stop()
-
-        st.write(
-            f"✅ Estimated costs for {len(report.get('cost_estimates', []))} component(s)"
-        )
-        status.update(label="✅ Step 3/3 — Cost estimation complete", state="complete")
-
-    # --- Vehicle Info ---
     vehicle = report["vehicle"]
-    st.header("🚘 Vehicle Identified")
-    v_cols = st.columns(4)
-    v_cols[0].metric("Make", vehicle["make"])
-    v_cols[1].metric("Model", vehicle["model"])
-    v_cols[2].metric("Year", vehicle["year"])
-    v_cols[3].metric("Confidence", f"{vehicle.get('confidence', 1.0):.0%}")
+    st.header("🚘 Vehicle")
+    v = st.columns(4)
+    v[0].metric("Make", vehicle["make"])
+    v[1].metric("Model", vehicle["model"])
+    v[2].metric("Year", vehicle["year"])
+    v[3].metric("Confidence", f"{vehicle.get('confidence', 1.0):.0%}")
 
-    # --- Damage Report ---
-    damages = report.get("damage_assessment", {}).get("damages", [])
-    st.header(f"💥 Damage Report ({len(damages)} components)")
+    damages = report["damage_assessment"]["damages"]
+    st.header(f"💥 Damage ({len(damages)} components)")
+    if not damages:
+        st.info("No damage detected in the assessed zones.")
+    for d in damages:
+        icon = "🟢" if d["severity"] <= 0.3 else "🟡" if d["severity"] <= 0.6 else "🔴"
+        with st.expander(
+            f"{icon} {d['component'].replace('_', ' ').title()}: "
+            f"severity {d['severity']:.0%}, {d['recommendation']}"
+        ):
+            st.write(f"**Type:** {d['damage_type']}")
+            st.write(d["description"])
+            st.progress(d["severity"])
 
-    if damages:
-        for dmg in damages:
-            severity = dmg["severity"]
-            color = "🟢" if severity <= 0.3 else "🟡" if severity <= 0.6 else "🔴"
-            rec = "🔧 Repair" if dmg["recommendation"] == "repair" else "🔄 Replace"
-
-            with st.expander(
-                f"{color} {dmg['component'].replace('_', ' ').title()} — "
-                f"Severity: {severity:.0%} — {rec}"
-            ):
-                st.write(f"**Damage type:** {dmg['damage_type']}")
-                st.write(f"**Description:** {dmg['description']}")
-                st.progress(severity)
-    else:
-        st.info("No damage detected!")
-
-    # --- Cost Estimates ---
-    cost_estimates = report.get("cost_estimates", [])
-    if cost_estimates:
-        st.header("💰 Cost Estimate")
-
-        for est in cost_estimates:
-            component_name = est["component"].replace("_", " ").title()
-            st.subheader(component_name)
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Parts (avg)", f"${est['part_cost_avg']}")
-            c2.metric("Labor", f"${est['labor_cost']}")
-            c3.metric("Total (avg)", f"${est['total_avg']}")
-            c4.metric("Source", est.get("pricing_method", "").replace("_", " ").title())
-
-        # --- Totals ---
-        st.divider()
+    if report["cost_estimates"]:
+        st.header("💰 Estimate")
+        for est in report["cost_estimates"]:
+            c = st.columns(4)
+            c[0].metric(
+                est["component"].replace("_", " ").title(), money(est["part_cost_avg"])
+            )
+            c[1].metric("Labour", money(est["labor_cost"]))
+            c[2].metric("Total (avg)", money(est["total_avg"]))
+            c[3].metric("Source", est["pricing_method"].replace("_", " "))
         totals = report["totals"]
-        t1, t2, t3 = st.columns(3)
-        t1.metric("🔩 Total Parts", f"${totals['parts_total']}")
-        t2.metric("👷 Total Labor", f"${totals['labor_total']}")
-        t3.metric("💵 Grand Total", f"${totals['grand_total']}")
+        t = st.columns(3)
+        t[0].metric("Parts", money(totals["parts_total"]))
+        t[1].metric("Labour", money(totals["labor_total"]))
+        t[2].metric("Grand total", money(totals["grand_total"]))
+        if totals["unpriced_components"]:
+            st.caption("Excludes unpriced: " + ", ".join(totals["unpriced_components"]))
 
-    # --- Disclaimer ---
-    st.divider()
-    st.caption(report.get("disclaimer", ""))
-
-    # --- Raw JSON ---
-    with st.expander("📋 Raw JSON Report"):
+    for warning in report["assessment_warnings"]:
+        st.warning(warning)
+    st.caption(report["disclaimer"])
+    meta = report.get("meta") or {}
+    st.caption(
+        f"Prompt {meta.get('prompt_version', '?')} · models: "
+        f"{', '.join(meta.get('models', [])) or 'none'} · "
+        f"{meta.get('input_tokens', 0)} in / {meta.get('output_tokens', 0)} out tokens"
+    )
+    with st.expander("Raw JSON"):
         st.json(report)
+
+
+if st.button("🔍 Analyze damage", type="primary", disabled=not uploaded):
+    client = _client()
+    with st.spinner("Uploading…"):
+        try:
+            files = [
+                (f.name, f.getvalue(), f.type or "application/octet-stream")
+                for f in uploaded
+            ]
+            st.session_state["upload_id"] = api_client.upload(client, files)[
+                "upload_id"
+            ]
+        except ApiError as err:
+            _show_error("Upload", err)
+            st.stop()
+
+    with st.spinner("Analysing (this can take a minute)…"):
+        try:
+            result = api_client.analyze(
+                client,
+                st.session_state["upload_id"],
+                make=make or None,
+                model=model or None,
+                year=int(year) if year else None,
+            )
+        except ApiError as err:
+            _show_error("Analysis", err)
+            st.stop()
+
+    if result.get("status") == "vehicle_confirmation_needed":
+        guess = result["vehicle_guess"]
+        st.warning(result["message"])
+        st.info(
+            f"Best guess: **{guess['year']} {guess['make']} {guess['model']}**. "
+            "Enter the correct make, model and year in the sidebar and run again."
+        )
+    else:
+        _render(result)

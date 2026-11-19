@@ -28,6 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unused dependencies `beautifulsoup4` and `google-search-results`.
 
 ### Fixed
+- The Streamlit demo called three endpoints removed in an earlier refactor. It now uses `/upload` then `/analyze` and shows the confirmation step, partial-result issues, unpriced parts and the problem `detail` on errors ([#4](https://github.com/Thytus777/car-crash-ai/issues/4)).
 - The vehicle-ID prompt was sent unformatted, so the model saw its JSON example with doubled braces. Prompt v2 fixes it ([#25](https://github.com/Thytus777/car-crash-ai/issues/25)).
 - Failed LLM stages were reported as success: a failed damage zone read as "no damage", a failed price estimate became a made-up $150/$300/$500, and a failed sanity check read as "no concerns". Reports now carry `status` (`complete`/`partial`) and `issues`. Unpriced parts have null costs and are listed in `totals.unpriced_components`, and if every zone fails the request returns 503 ([#3](https://github.com/Thytus777/car-crash-ai/issues/3)).
 - `/analyze` returned 500 whenever saving the estimate failed, and saving always failed on a missing foreign-key parent ([#1](https://github.com/Thytus777/car-crash-ai/issues/1)).

@@ -4,8 +4,10 @@
 UV      ?= uv
 BACKEND := backend
 RUN     := $(UV) run --directory $(BACKEND)
-# Floor only ever goes up. Target is 80 (see issue #14).
-COV_MIN ?= 75
+# Tests also cover the Streamlit demo, so they need its dependency group.
+TEST    := $(RUN) --group demo pytest
+# Floor only ever goes up (issue #14 target of 80 reached).
+COV_MIN ?= 80
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lock-check lint format format-check typecheck test test-integration \
@@ -35,16 +37,16 @@ typecheck: ## mypy --strict on the backend package
 	$(RUN) mypy
 
 test: ## Unit tests: fast, no network, no real LLM
-	$(RUN) pytest -m unit
+	$(TEST) -m unit
 
 test-integration: ## Integration tests: FastAPI app with fixture LLM responses
-	$(RUN) pytest -m integration
+	$(TEST) -m integration
 
 test-all: ## All unit + integration tests
-	$(RUN) pytest -m "unit or integration"
+	$(TEST) -m "unit or integration"
 
 coverage: ## Unit + integration with coverage gate; writes backend/coverage.xml
-	$(RUN) pytest -m "unit or integration" --cov --cov-report=term --cov-report=xml --cov-fail-under=$(COV_MIN)
+	$(TEST) -m "unit or integration" --cov --cov-report=term --cov-report=xml --cov-fail-under=$(COV_MIN)
 
 eval: ## Run the eval harness (Phase 3, issue #15)
 	@echo "Eval harness not implemented yet; tracked in #15." && exit 1
