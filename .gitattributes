@@ -6,7 +6,3 @@
 *.png binary
 *.webp binary
 *.pdf binary
-
-
-# Use bd merge for beads JSONL files
-.beads/issues.jsonl merge=beads
