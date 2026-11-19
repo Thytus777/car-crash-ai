@@ -11,6 +11,10 @@ updates:
         dependency-type: production
       python-dev:
         dependency-type: development
+    ignore:
+      # OpenCV 5 drops the bundled Haar cascades the labelling tool relies on.
+      - dependency-name: opencv-python-headless
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: build
       include: scope
@@ -46,5 +50,10 @@ updates:
     groups:
       base-images:
         patterns: ["*"]
+    ignore:
+      # Python itself is upgraded deliberately (with .python-version and
+      # requires-python), not by the weekly base-image bump.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: build
