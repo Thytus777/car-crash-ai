@@ -12,7 +12,3 @@ known-first-party = ["app"]
 [lint.flake8-bugbear]
 # FastAPI's dependency-injection markers are designed to be used as defaults.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form"]
-
-[lint.per-file-ignores]
-# Long UI strings; the file is rewritten against /v1 in #4, drop this then.
-"frontend/streamlit_app.py" = ["E501"]

@@ -12,7 +12,7 @@ Car Crash AI: crash photos go in, a vision LLM identifies damaged components, an
   - `app/models/`: Pydantic schemas
   - `app/db/`: SQLAlchemy + Alembic
 - `frontend-next/`: Next.js app, the primary client.
-- `frontend/streamlit_app.py`: internal demo and future labelling tool. Broken until #4.
+- `frontend/`: Streamlit demo (`streamlit_app.py`) on top of `api_client.py`, which holds the HTTP calls with no Streamlit dependency. Tests drive `api_client` against the real app through `TestClient`, so the demo can't drift from the API.
 - `docs/adr/`: architecture decision records. Read the relevant one before reversing a decision, and add one (copy `0000-template.md`) for any decision a reviewer would ask "why?" about.
 - The standalone iOS app was retired (ADR 0001). The code is in tag `archive/ios-standalone`.
 
