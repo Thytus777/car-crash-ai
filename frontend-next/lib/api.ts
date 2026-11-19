@@ -1,5 +1,14 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// NOTE: a key shipped in browser code is visible to anyone who opens the site.
+// It only deters casual abuse of the API; a public deployment should route
+// calls through a server-side proxy that adds the key instead.
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+
+function withKey(headers: Record<string, string> = {}): Record<string, string> {
+  return API_KEY ? { ...headers, "X-API-Key": API_KEY } : headers;
+}
+
 export interface UploadResponse {
   upload_id: string;
   image_count: number;
@@ -53,7 +62,11 @@ export interface AssessmentReport {
 export async function uploadImages(files: File[]): Promise<UploadResponse> {
   const form = new FormData();
   files.forEach((f) => form.append("images", f));
-  const res = await fetch(`${BASE}/api/v1/upload`, { method: "POST", body: form });
+  const res = await fetch(`${BASE}/api/v1/upload`, {
+    method: "POST",
+    body: form,
+    headers: withKey(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Upload failed");
@@ -67,7 +80,7 @@ export async function analyzeUpload(
 ): Promise<AssessmentReport> {
   const res = await fetch(`${BASE}/api/v1/analyze`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withKey({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       upload_id: uploadId,
       make: opts?.make ?? null,
@@ -84,12 +97,25 @@ export async function analyzeUpload(
   return res.json();
 }
 
-export function reportPdfUrl(estimateId: number): string {
-  return `${BASE}/api/v1/report/${estimateId}`;
+/** Fetch the PDF (with the API key) and save it; plain links can't send headers. */
+export async function downloadReport(estimateId: number): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/report/${estimateId}`, { headers: withKey() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Report download failed");
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `damage_report_${estimateId}.pdf`;
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function listEstimates() {
-  const res = await fetch(`${BASE}/api/v1/estimates`);
+  const res = await fetch(`${BASE}/api/v1/estimates`, { headers: withKey() });
   if (!res.ok) throw new Error("Failed to load estimates");
   return res.json();
 }
