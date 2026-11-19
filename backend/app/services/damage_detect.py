@@ -8,7 +8,7 @@ import logging
 from collections.abc import Sequence
 
 from app.core.config import settings
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.core.llm import generate
 from app.models.damage import (
     DamageAssessment,
@@ -109,8 +109,8 @@ async def _run_zone_pass(
     zone: str,
     components: list[str],
     images: Sequence[bytes],
-) -> list[DamageItem]:
-    """Run a single focused zone prompt and parse the result."""
+) -> list[DamageItem] | AppError:
+    """Run one focused zone prompt; return its items, or the error if it failed."""
     prompt = build_zone_prompt(zone, components)
     try:
         result = await generate(
@@ -121,9 +121,9 @@ async def _run_zone_pass(
             max_output_tokens=1500,
             temperature=0.2,
         )
-    except Exception:
-        logger.exception("Zone pass '%s' failed", zone)
-        return []
+    except AppError as exc:
+        logger.warning("Zone pass '%s' failed: %s", zone, exc.detail)
+        return exc
     logger.info("Zone '%s': %d finding(s)", zone, len(result.output.damages))
     return to_damage_items(result.output.damages)
 
@@ -163,11 +163,16 @@ async def detect_damage(
         _run_zone_pass(zone, components, images)
         for zone, components in ALL_ZONES.items()
     ]
-    zone_results = await asyncio.gather(*zone_tasks)
-    items = _merge_zone_results(list(zone_results))
+    outcomes = dict(zip(ALL_ZONES, await asyncio.gather(*zone_tasks), strict=True))
+    failed = {z: o for z, o in outcomes.items() if isinstance(o, AppError)}
+    if len(failed) == len(outcomes):
+        # Nothing was assessed: an empty damage list would read as "no damage".
+        raise next(iter(failed.values()))
 
+    succeeded = [o for o in outcomes.values() if not isinstance(o, AppError)]
     return DamageAssessment(
-        damages=items,
+        damages=_merge_zone_results(succeeded),
+        failed_zones=list(failed),
         angle_guidance=angle_guidance,
         assessment_method="zone_pass",
     )

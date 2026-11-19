@@ -25,6 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unused dependencies `beautifulsoup4` and `google-search-results`.
 
 ### Fixed
+- Failed LLM stages were reported as success: a failed damage zone read as "no damage", a failed price estimate became a made-up $150/$300/$500, and a failed sanity check read as "no concerns". Reports now carry `status` (`complete`/`partial`) and `issues`. Unpriced parts have null costs and are listed in `totals.unpriced_components`, and if every zone fails the request returns 503 ([#3](https://github.com/Thytus777/car-crash-ai/issues/3)).
 - `/analyze` returned 500 whenever saving the estimate failed, and saving always failed on a missing foreign-key parent ([#1](https://github.com/Thytus777/car-crash-ai/issues/1)).
 - Path traversal through `upload_id` ([#2](https://github.com/Thytus777/car-crash-ai/issues/2)).
 - Unexpected errors no longer leak exception text in responses.

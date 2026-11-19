@@ -3,6 +3,7 @@
 import logging
 from decimal import Decimal
 
+from app.core.errors import AppError
 from app.core.llm import generate
 from app.models.damage import DamageItem
 from app.models.estimate import CostEstimate, PricingMethod
@@ -51,9 +52,24 @@ async def estimate_cost(
             part_high = (static_price * Decimal("1.4")).quantize(Decimal("0.01"))
             pricing_method = "static_reference"
         else:
-            part_low, part_avg, part_high = await _ai_estimate_price(
-                vehicle, damage.component
-            )
+            estimate = await _ai_estimate_price(vehicle, damage.component)
+            if estimate is None:
+                return CostEstimate(
+                    component=damage.component,
+                    recommendation=damage.recommendation,
+                    part_cost_low=None,
+                    part_cost_avg=None,
+                    part_cost_high=None,
+                    price_sources=live_results,
+                    pricing_method="unpriced",
+                    labor_hours=labor_hours,
+                    labor_rate=labor_rate,
+                    labor_cost=labor_cost,
+                    total_low=None,
+                    total_avg=None,
+                    total_high=None,
+                )
+            part_low, part_avg, part_high = estimate
             pricing_method = "ai_estimate"
 
     return CostEstimate(
@@ -75,8 +91,8 @@ async def estimate_cost(
 
 async def _ai_estimate_price(
     vehicle: Vehicle, component: str
-) -> tuple[Decimal, Decimal, Decimal]:
-    """Ask the LLM to estimate part prices when no other data is available."""
+) -> tuple[Decimal, Decimal, Decimal] | None:
+    """Ask the LLM for a price range; None if it couldn't give a usable one."""
     prompt = PRICE_ESTIMATION_PROMPT.format(
         year=vehicle.year,
         make=vehicle.make,
@@ -92,9 +108,9 @@ async def _ai_estimate_price(
             max_output_tokens=200,
             temperature=0.2,
         )
-    except Exception:
-        logger.exception("AI price estimation failed, using defaults")
-        return Decimal("150.00"), Decimal("300.00"), Decimal("500.00")
+    except AppError as exc:
+        logger.warning("AI price estimate for %s failed: %s", component, exc.detail)
+        return None
 
     est = result.output
     low, avg, high = (

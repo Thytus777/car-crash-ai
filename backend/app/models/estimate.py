@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 from app.models.damage import DamageAssessment
 from app.models.vehicle import Vehicle
 
-PricingMethod = Literal["live_search", "static_reference", "ai_estimate"]
+# "unpriced": no price source succeeded; part costs and totals are null.
+PricingMethod = Literal["live_search", "static_reference", "ai_estimate", "unpriced"]
 
 
 class PriceResult(BaseModel):
@@ -26,26 +27,50 @@ class PriceResult(BaseModel):
 class CostEstimate(BaseModel):
     component: str
     recommendation: Literal["repair", "replace"]
-    part_cost_low: Decimal = Field(..., decimal_places=2)
-    part_cost_avg: Decimal = Field(..., decimal_places=2)
-    part_cost_high: Decimal = Field(..., decimal_places=2)
+    part_cost_low: Decimal | None = Field(..., decimal_places=2)
+    part_cost_avg: Decimal | None = Field(..., decimal_places=2)
+    part_cost_high: Decimal | None = Field(..., decimal_places=2)
     price_sources: list[PriceResult] = Field(default_factory=list)
     pricing_method: PricingMethod = Field(default="static_reference")
     labor_hours: Decimal = Field(..., decimal_places=2)
     labor_rate: Decimal = Field(..., decimal_places=2)
     labor_cost: Decimal = Field(..., decimal_places=2)
-    total_low: Decimal = Field(..., decimal_places=2)
-    total_avg: Decimal = Field(..., decimal_places=2)
-    total_high: Decimal = Field(..., decimal_places=2)
+    total_low: Decimal | None = Field(..., decimal_places=2)
+    total_avg: Decimal | None = Field(..., decimal_places=2)
+    total_high: Decimal | None = Field(..., decimal_places=2)
 
 
 class ReportTotals(BaseModel):
-    parts_total: Decimal = Field(..., decimal_places=2)
+    parts_total: Decimal = Field(
+        ..., decimal_places=2, description="Sum over priced components only"
+    )
     labor_total: Decimal = Field(..., decimal_places=2)
     grand_total: Decimal = Field(..., decimal_places=2)
+    unpriced_components: list[str] = Field(
+        default_factory=list,
+        description="Components with no part price; excluded from parts_total",
+    )
+
+
+AssessmentStage = Literal["damage_detection", "pricing", "sanity_check"]
+
+
+class AssessmentIssue(BaseModel):
+    """A stage that degraded without failing the whole request."""
+
+    stage: AssessmentStage
+    scope: str | None = Field(
+        default=None, description="Zone or component affected, if any"
+    )
+    detail: str
 
 
 class AssessmentReport(BaseModel):
+    status: Literal["complete", "partial"] = Field(
+        default="complete",
+        description="'partial' when any stage degraded; see issues",
+    )
+    issues: list[AssessmentIssue] = Field(default_factory=list)
     estimate_id: int | None = Field(
         default=None,
         description=(

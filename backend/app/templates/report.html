@@ -149,12 +149,12 @@
         {{ c.component | replace("_", " ") | title }}
         <br><span class="pricing-tag">{{ c.pricing_method | replace("_", " ") }}</span>
       </td>
-      <td>${{ "%.0f" | format(c.part_cost_low | float) }}</td>
-      <td>${{ "%.0f" | format(c.part_cost_avg | float) }}</td>
-      <td>${{ "%.0f" | format(c.part_cost_high | float) }}</td>
+      <td>{% if c.part_cost_low is none %}—{% else %}${{ "%.0f" | format(c.part_cost_low | float) }}{% endif %}</td>
+      <td>{% if c.part_cost_avg is none %}—{% else %}${{ "%.0f" | format(c.part_cost_avg | float) }}{% endif %}</td>
+      <td>{% if c.part_cost_high is none %}—{% else %}${{ "%.0f" | format(c.part_cost_high | float) }}{% endif %}</td>
       <td>{{ c.labor_hours }}</td>
       <td>${{ "%.0f" | format(c.labor_cost | float) }}</td>
-      <td><strong>${{ "%.0f" | format(c.total_avg | float) }}</strong></td>
+      <td><strong>{% if c.total_avg is none %}Unpriced{% else %}${{ "%.0f" | format(c.total_avg | float) }}{% endif %}</strong></td>
     </tr>
     {% endfor %}
   </tbody>
@@ -165,6 +165,7 @@
   <div class="total-item">
     <div class="total-label">PARTS TOTAL</div>
     <div class="total-value">${{ "%.0f" | format(totals.parts_total | float) }}</div>
+    {% if totals.unpriced_components %}<div class="total-label">excludes unpriced: {{ totals.unpriced_components | join(", ") | replace("_", " ") }}</div>{% endif %}
   </div>
   <div class="total-item">
     <div class="total-label">LABOR TOTAL</div>

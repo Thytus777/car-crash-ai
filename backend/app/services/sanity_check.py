@@ -6,6 +6,7 @@ structural damage on a vehicle that visually has none.
 
 import logging
 
+from app.core.errors import AppError
 from app.core.llm import generate
 from app.models.estimate import AssessmentReport
 from app.models.llm_outputs import SanityReview
@@ -39,10 +40,11 @@ Return ONLY valid JSON:
 """
 
 
-async def run_sanity_check(report: AssessmentReport) -> list[str]:
+async def run_sanity_check(report: AssessmentReport) -> list[str] | None:
     """Run a second-pass LLM review of the full report.
 
-    Returns a list of warning strings (empty if everything looks fine).
+    Returns warning strings (empty if everything looks fine), or None if the
+    review itself failed, so callers can tell "no concerns" from "not checked".
     """
     if not report.damage_assessment.damages:
         return []
@@ -69,9 +71,9 @@ async def run_sanity_check(report: AssessmentReport) -> list[str]:
             max_output_tokens=400,
             temperature=0.1,
         )
-    except Exception:
-        logger.exception("Sanity check failed — skipping")
-        return []
+    except AppError as exc:
+        logger.warning("Sanity check failed: %s", exc.detail)
+        return None
 
     review = result.output
     warnings = [w for w in review.warnings if w]
