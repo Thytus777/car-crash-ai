@@ -34,8 +34,9 @@ function Badge({ value }: { value: string }) {
 }
 
 export default function DamageReport({ report, estimateId, onReset }: Props) {
-  const { vehicle, damage_assessment, cost_estimates, totals, assessment_warnings } = report;
-  const fmt = (n: string | number) => `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const { vehicle, damage_assessment, cost_estimates, totals, assessment_warnings, issues } = report;
+  const fmt = (n: string | number | null) =>
+    n === null ? "—" : `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
   return (
     <div className="space-y-6">
@@ -55,6 +56,18 @@ export default function DamageReport({ report, estimateId, onReset }: Props) {
           ← New assessment
         </button>
       </div>
+
+      {/* Partial result: stages that degraded */}
+      {report.status === "partial" && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Partial assessment — some steps could not complete</p>
+          <ul className="mt-1 list-disc pl-5 space-y-0.5">
+            {issues.map((issue, i) => (
+              <li key={i}>{issue.detail}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Quality warnings */}
       {damage_assessment.image_quality_warnings.length > 0 && (
@@ -130,8 +143,14 @@ export default function DamageReport({ report, estimateId, onReset }: Props) {
                     <span className="block text-xs text-gray-400">{c.pricing_method.replace(/_/g, " ")}</span>
                   </td>
                   <td className="px-4 py-2">
-                    {fmt(c.part_cost_low)} – {fmt(c.part_cost_high)}
-                    <span className="block text-xs text-gray-400">avg {fmt(c.part_cost_avg)}</span>
+                    {c.part_cost_avg === null ? (
+                      <span className="text-amber-700">Unpriced</span>
+                    ) : (
+                      <>
+                        {fmt(c.part_cost_low)} – {fmt(c.part_cost_high)}
+                        <span className="block text-xs text-gray-400">avg {fmt(c.part_cost_avg)}</span>
+                      </>
+                    )}
                   </td>
                   <td className="px-4 py-2">{fmt(c.labor_cost)}</td>
                   <td className="px-4 py-2 font-semibold">{fmt(c.total_avg)}</td>
