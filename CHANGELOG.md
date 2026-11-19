@@ -27,6 +27,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Architecture decision records in `docs/adr/`.
 
 ### Changed
+- Uploads are stored at up to 1600 px (`STORED_IMAGE_MAX_EDGE`) and downscaled for the models to `MODEL_IMAGE_MAX_EDGE` (1024) at `MODEL_IMAGE_JPEG_QUALITY` (90), so eval sweeps can change model input without re-uploading. Model input is unchanged by default ([#50](https://github.com/Thytus777/car-crash-ai/issues/50)).
 - Damaged parts are priced concurrently (bounded by `PRICING_CONCURRENCY`). Each part's page fetches and price extractions also run concurrently, and live search has a deadline (`PRICE_SEARCH_DEADLINE_S`) after which it falls back to static or AI pricing ([#7](https://github.com/Thytus777/car-crash-ai/issues/7)).
 - Prompts live in versioned, immutable template files (`backend/prompts/<version>/`). Every analysis response records `meta.prompt_version`, the models used and token counts ([#25](https://github.com/Thytus777/car-crash-ai/issues/25), [ADR 0002](docs/adr/0002-versioned-prompt-files.md)).
 - LLM calls use native structured output (Gemini `response_json_schema`, OpenAI `chat.completions.parse`) with Pydantic schemas, per-attempt timeouts, jittered exponential backoff, bounded re-asks on invalid output, and provider fallback ([#6](https://github.com/Thytus777/car-crash-ai/issues/6)).
