@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.errors import AppError
+from app.core.logging import request_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ class Problem(BaseModel):
     status: int = Field(description="HTTP status code")
     detail: str = Field(description="Explanation specific to this occurrence")
     instance: str = Field(description="Request path that produced the problem")
+    request_id: str | None = Field(
+        default=None, description="Matches the X-Request-ID header and server logs"
+    )
 
 
 def _problem_response(
@@ -54,6 +58,7 @@ def _problem_response(
         status=status,
         detail=detail,
         instance=request.url.path,
+        request_id=request_id_var.get(),
         **extensions,
     )
     return JSONResponse(
