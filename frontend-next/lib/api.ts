@@ -17,16 +17,26 @@ export interface DamageItem {
 export interface CostEstimate {
   component: string;
   recommendation: string;
-  part_cost_low: string;
-  part_cost_avg: string;
-  part_cost_high: string;
+  // null when pricing_method is "unpriced"
+  part_cost_low: string | null;
+  part_cost_avg: string | null;
+  part_cost_high: string | null;
   pricing_method: string;
   labor_hours: string;
   labor_cost: string;
-  total_avg: string;
+  total_avg: string | null;
+}
+
+export interface AssessmentIssue {
+  stage: "damage_detection" | "pricing" | "sanity_check";
+  scope: string | null;
+  detail: string;
 }
 
 export interface AssessmentReport {
+  status: "complete" | "partial";
+  issues: AssessmentIssue[];
+  estimate_id: number | null;
   vehicle: { make: string; model: string; year: number; trim?: string; confidence: number; vin?: string };
   damage_assessment: {
     damages: DamageItem[];
@@ -35,7 +45,7 @@ export interface AssessmentReport {
     assessment_method: string;
   };
   cost_estimates: CostEstimate[];
-  totals: { parts_total: string; labor_total: string; grand_total: string };
+  totals: { parts_total: string; labor_total: string; grand_total: string; unpriced_components: string[] };
   assessment_warnings: string[];
   disclaimer: string;
 }

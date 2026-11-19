@@ -89,6 +89,10 @@ class DamageAssessment(BaseModel):
     angle_guidance: AngleGuidance | None = Field(
         default=None, description="Missing photo angles that would improve accuracy"
     )
+    failed_zones: list[str] = Field(
+        default_factory=list,
+        description="Zones whose detection pass failed; their parts are unassessed",
+    )
     assessment_method: Literal["single_pass", "zone_pass", "consensus"] = Field(
         default="single_pass", description="Detection method used"
     )

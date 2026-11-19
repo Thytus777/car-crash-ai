@@ -1,5 +1,8 @@
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from app.core.llm import LLMUnavailableError
 from app.models.llm_outputs import DamageFinding, DamageFindings
 from app.services.damage_detect import detect_damage, to_damage_items
 from tests.llm_fakes import llm_result
@@ -71,3 +74,34 @@ async def test_detect_damage_merges_zone_passes_keeping_worst_severity() -> None
         ("rear_bumper", 0.65),
     ]
     assert result.assessment_method == "zone_pass"
+
+
+async def test_failed_zone_is_reported_not_silently_dropped() -> None:
+    """Regression for #3: a failed zone used to look like an undamaged zone."""
+
+    async def fake_generate(*_: object, task: str, **__: object) -> object:
+        if task == "damage_front":
+            raise LLMUnavailableError("gemini damage_front: unavailable")
+        return llm_result(DamageFindings(damages=[_finding("rear_bumper", 0.5)]))
+
+    with (
+        patch("app.services.damage_detect.load_images", return_value=[b"jpeg"]),
+        patch("app.services.damage_detect.generate", side_effect=fake_generate),
+    ):
+        result = await detect_damage("0123456789ab")
+
+    assert result.failed_zones == ["front"]
+    assert [d.component for d in result.damages] == ["rear_bumper"]
+
+
+async def test_all_zones_failing_raises_instead_of_reporting_no_damage() -> None:
+    """Regression for #3: three failed zones returned 200 with zero damages."""
+    with (
+        patch("app.services.damage_detect.load_images", return_value=[b"jpeg"]),
+        patch(
+            "app.services.damage_detect.generate",
+            side_effect=LLMUnavailableError("down"),
+        ),
+        pytest.raises(LLMUnavailableError),
+    ):
+        await detect_damage("0123456789ab")

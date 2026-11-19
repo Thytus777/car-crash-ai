@@ -6,7 +6,12 @@ from pydantic import BaseModel, Field
 
 from app.api.problems import problem_responses
 from app.db.repository import save_estimate
-from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
+from app.models.estimate import (
+    AssessmentIssue,
+    AssessmentReport,
+    CostEstimate,
+    ReportTotals,
+)
 from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
 from app.services.damage_detect import detect_damage
@@ -90,14 +95,36 @@ async def analyze_damage(
         use_consensus=request.use_consensus,
     )
 
+    issues = [
+        AssessmentIssue(
+            stage="damage_detection",
+            scope=zone,
+            detail=f"The {zone} zone could not be assessed; its components "
+            "are missing from this report.",
+        )
+        for zone in damage_assessment.failed_zones
+    ]
+
     # --- Cost estimation ---
     cost_estimates: list[CostEstimate] = []
     for damage_item in damage_assessment.damages:
         cost = await estimate_cost(vehicle, damage_item)
         cost_estimates.append(cost)
 
+    unpriced = [c.component for c in cost_estimates if c.part_cost_avg is None]
+    issues.extend(
+        AssessmentIssue(
+            stage="pricing",
+            scope=component,
+            detail=f"No part price could be found or estimated for {component}; "
+            "it is excluded from parts_total.",
+        )
+        for component in unpriced
+    )
+
     parts_total = sum(
-        (c.part_cost_avg for c in cost_estimates), Decimal("0.00")
+        (c.part_cost_avg for c in cost_estimates if c.part_cost_avg is not None),
+        Decimal("0.00"),
     ).quantize(Decimal("0.01"))
     labor_total = sum((c.labor_cost for c in cost_estimates), Decimal("0.00")).quantize(
         Decimal("0.01")
@@ -112,11 +139,23 @@ async def analyze_damage(
             parts_total=parts_total,
             labor_total=labor_total,
             grand_total=grand_total,
+            unpriced_components=unpriced,
         ),
     )
 
     # --- Sanity check (second-pass LLM review) ---
-    report.assessment_warnings = await run_sanity_check(report)
+    warnings = await run_sanity_check(report)
+    if warnings is None:
+        issues.append(
+            AssessmentIssue(
+                stage="sanity_check",
+                detail="The consistency review could not run; treat this "
+                "estimate as unreviewed.",
+            )
+        )
+    report.assessment_warnings = warnings or []
+    report.issues = issues
+    report.status = "partial" if issues else "complete"
 
     # --- Persist (best-effort: a DB failure leaves estimate_id unset) ---
     report.estimate_id = await save_estimate(report, request.upload_id, request.vin)

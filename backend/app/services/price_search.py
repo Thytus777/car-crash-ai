@@ -7,6 +7,7 @@ import httpx
 import trafilatura
 
 from app.core.config import settings
+from app.core.errors import AppError
 from app.core.llm import generate
 from app.models.estimate import PriceResult
 from app.models.llm_outputs import PriceExtraction
@@ -133,8 +134,9 @@ async def _extract_prices(
                 max_output_tokens=200,
                 temperature=0.1,
             )
-        except Exception:
-            logger.debug("Price extraction failed for %s", domain, exc_info=True)
+        except AppError as exc:
+            # One page failing just means one fewer price sample.
+            logger.info("Price extraction failed for %s: %s", domain, exc.detail)
             continue
 
         extracted = result.output

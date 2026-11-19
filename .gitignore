@@ -53,6 +53,7 @@ coverage.xml
 
 # Next.js generated
 frontend-next/next-env.d.ts
+*.tsbuildinfo
 
 # Local agent settings
 .claude/settings.local.json

@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.llm import LLMOutputError
 from app.models.damage import DamageItem
 from app.models.estimate import PriceResult
 from app.models.vehicle import Vehicle
@@ -147,3 +148,33 @@ async def test_estimate_cost_unknown_vehicle_uses_default() -> None:
     assert result.part_cost_avg == Decimal("1200.00")
     assert result.part_cost_low == Decimal("800.00")
     assert result.part_cost_high == Decimal("1800.00")
+
+
+async def test_failed_ai_estimate_is_unpriced_not_made_up() -> None:
+    """Regression for #3: a failed estimate used to return $150/$300/$500."""
+    vehicle = Vehicle(make="Ferrari", model="F40", year=1990)
+    damage = DamageItem(
+        component="hood",
+        damage_type="crush",
+        severity=0.9,
+        description="Destroyed",
+        recommendation="replace",
+    )
+
+    with (
+        patch(
+            "app.services.cost_estimate.search_part_prices",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.cost_estimate.generate",
+            new_callable=AsyncMock,
+            side_effect=LLMOutputError("invalid output"),
+        ),
+    ):
+        result = await estimate_cost(vehicle, damage)
+
+    assert result.pricing_method == "unpriced"
+    assert result.part_cost_avg is None and result.total_avg is None
+    assert result.labor_cost > 0  # labour is still known
