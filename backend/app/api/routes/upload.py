@@ -38,7 +38,7 @@ async def upload_images(images: list[UploadFile]) -> UploadResponse:
     try:
         upload_id, processed, quality_warnings = await process_upload(files)
     except ImageValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return UploadResponse(
         upload_id=upload_id,

@@ -5,10 +5,10 @@ from decimal import Decimal
 from pathlib import Path
 
 _CSV_PATH = Path(__file__).parent.parent / "data" / "parts_prices.csv"
-_PRICE_DATA: list[dict] | None = None
+_PRICE_DATA: list[dict[str, str]] | None = None
 
 
-def _load_csv() -> list[dict]:
+def _load_csv() -> list[dict[str, str]]:
     global _PRICE_DATA
     if _PRICE_DATA is not None:
         return _PRICE_DATA

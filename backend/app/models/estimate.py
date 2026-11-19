@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 from app.models.damage import DamageAssessment
 from app.models.vehicle import Vehicle
 
+PricingMethod = Literal["live_search", "static_reference", "ai_estimate"]
+
 
 class PriceResult(BaseModel):
     price: Decimal = Field(..., decimal_places=2, description="Part price")
@@ -28,9 +30,7 @@ class CostEstimate(BaseModel):
     part_cost_avg: Decimal = Field(..., decimal_places=2)
     part_cost_high: Decimal = Field(..., decimal_places=2)
     price_sources: list[PriceResult] = Field(default_factory=list)
-    pricing_method: Literal["live_search", "static_reference", "ai_estimate"] = Field(
-        default="static_reference"
-    )
+    pricing_method: PricingMethod = Field(default="static_reference")
     labor_hours: Decimal = Field(..., decimal_places=2)
     labor_rate: Decimal = Field(..., decimal_places=2)
     labor_cost: Decimal = Field(..., decimal_places=2)

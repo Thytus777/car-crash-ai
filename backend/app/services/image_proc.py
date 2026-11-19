@@ -110,7 +110,7 @@ async def process_upload(
     results: list[ProcessedImage] = []
     all_warnings: list[ImageQualityWarning] = []
 
-    for filename, data, content_type in files:
+    for filename, data, _content_type in files:
         img = _validate_image(data, filename)
         all_warnings.extend(check_image_quality(img, filename))
 
