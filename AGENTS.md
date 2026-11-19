@@ -44,8 +44,8 @@ Gotchas:
 ## Conventions
 
 - **Schemas:** Pydantic v2 models for every request, response and LLM output. Money is `Decimal` with 2 places. Severity is a float in `[0, 1]`. Component names come from `STANDARD_COMPONENTS` in `app/models/damage.py`.
-- **Types:** the backend passes mypy `--strict`. The narrow override for `app.core.llm` exists only until #6 lands.
-- **Model calls:** every model call goes through `app/core/llm.py`, and its prompt text lives under `app/prompts/`.
+- **Types:** the backend passes mypy `--strict` with no per-module exceptions.
+- **Model calls:** every call goes through `generate(schema, prompt, images, task=...)` in `app/core/llm.py`. Its output schema is a Pydantic model in `app/models/llm_outputs.py`; that model is both the provider's structured-output schema and the validator, so a new call means a new model there, not hand parsing. Retries, timeouts and fallback live only in `llm.py`; callers handle the typed `LLM*Error`s. Wrap work in `record_llm_calls()` to collect per-call tokens and attempts.
 - **Failures:** a stage that fails reports the failure in the response. Silent fallbacks (empty damage lists, default prices) are the bug class tracked in #3.
 - **Secrets:** they come from the environment only (`backend/.env` locally, CI secrets in Actions). `.env.example` files hold the variable names.
 
@@ -54,6 +54,7 @@ Gotchas:
 - `tests/unit/` (auto-marked `unit`): pure logic, no network, no DB, no real LLM. The whole suite stays under 30 s. Mock LLM and HTTP clients at the boundary, i.e. `app.core.llm` functions and `httpx`.
 - `tests/integration/` (auto-marked `integration`): the FastAPI app through `httpx.AsyncClient` with fixture LLM responses.
 - Every bug fix lands with a regression test that goes **red** before the fix and green after.
+- Fake the LLM with `tests/llm_fakes.py`: `ScriptedClient` replays replies and errors for policy tests, and `llm_result()` wraps an output for patched `generate` calls. The SDKs send over `httpx2`, which respx can't intercept, so mock at the `ProviderClient` seam.
 - The coverage floor is `COV_MIN` in the `Makefile`. It only moves up. The target is 80% (#14).
 - Evals do not exist yet (#15). Until they do, any prompt or model change is unmeasured; say so in the PR.
 

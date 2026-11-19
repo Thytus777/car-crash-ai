@@ -15,12 +15,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Architecture decision records in `docs/adr/`.
 
 ### Changed
+- LLM calls use native structured output (Gemini `response_json_schema`, OpenAI `chat.completions.parse`) with Pydantic schemas, per-attempt timeouts, jittered exponential backoff, bounded re-asks on invalid output, and provider fallback ([#6](https://github.com/Thytus777/car-crash-ai/issues/6)).
+- Error responses are RFC 9457 `application/problem+json` ([#24](https://github.com/Thytus777/car-crash-ai/issues/24)).
 - Trunk-based workflow on `main`; the `develop` branch is retired.
 - Tests split into `tests/unit` and `tests/integration` with pytest markers.
 
 ### Removed
 - Standalone iOS app ([ADR 0001](docs/adr/0001-retire-standalone-ios-app.md)); archived in tag `archive/ios-standalone`.
 - Unused dependencies `beautifulsoup4` and `google-search-results`.
+
+### Fixed
+- `/analyze` returned 500 whenever saving the estimate failed, and saving always failed on a missing foreign-key parent ([#1](https://github.com/Thytus777/car-crash-ai/issues/1)).
+- Path traversal through `upload_id` ([#2](https://github.com/Thytus777/car-crash-ai/issues/2)).
+- Unexpected errors no longer leak exception text in responses.
 
 ### Security
 - `backend/.dockerignore` keeps `.env` files and local virtualenvs out of Docker images.
