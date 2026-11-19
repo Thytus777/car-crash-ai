@@ -46,6 +46,13 @@ class ReportTotals(BaseModel):
 
 
 class AssessmentReport(BaseModel):
+    estimate_id: int | None = Field(
+        default=None,
+        description=(
+            "ID of the saved estimate (for /estimates and /report), "
+            "or null if the result could not be saved"
+        ),
+    )
     vehicle: Vehicle
     damage_assessment: DamageAssessment
     cost_estimates: list[CostEstimate] = Field(default_factory=list)

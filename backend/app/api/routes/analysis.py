@@ -1,13 +1,11 @@
 import logging
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.llm import LLMRateLimitError
-from app.db.models import EstimateRecord
-from app.db.session import get_db
+from app.db.repository import save_estimate
 from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
@@ -68,7 +66,6 @@ async def _identify_from_images(upload_id: str) -> Vehicle:
 )
 async def analyze_damage(
     request: AnalyzeRequest,
-    db: AsyncSession = Depends(get_db),
 ) -> AssessmentReport | VehicleConfirmNeeded:
     # --- Vehicle identification ---
     if request.make and request.model and request.year:
@@ -141,24 +138,7 @@ async def analyze_damage(
     # --- Sanity check (second-pass LLM review) ---
     report.assessment_warnings = await run_sanity_check(report)
 
-    # --- Persist to database ---
-    try:
-        record = EstimateRecord(
-            upload_id=request.upload_id,
-            vehicle_make=vehicle.make,
-            vehicle_model=vehicle.model,
-            vehicle_year=vehicle.year,
-            vehicle_vin=request.vin,
-            vehicle_confidence=vehicle.confidence,
-            parts_total=float(parts_total),
-            labor_total=float(labor_total),
-            grand_total=float(grand_total),
-            report_json=report.model_dump_json(),
-        )
-        db.add(record)
-        await db.flush()
-        logger.info("Saved estimate id=%d for upload=%s", record.id, request.upload_id)
-    except Exception:
-        logger.exception("Failed to persist estimate — returning result anyway")
+    # --- Persist (best-effort: a DB failure leaves estimate_id unset) ---
+    report.estimate_id = await save_estimate(report, request.upload_id, request.vin)
 
     return report

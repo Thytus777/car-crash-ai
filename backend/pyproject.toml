@@ -25,6 +25,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.22.1",
     "mypy>=1.13",
     "pre-commit>=4.0",
     "pytest>=8.3",
@@ -75,6 +76,8 @@ markers = [
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# SQLAlchemy's async layer runs ORM code inside greenlets.
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 show_missing = true
