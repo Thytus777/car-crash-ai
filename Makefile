@@ -57,6 +57,9 @@ openapi-check: ## Fail if backend/openapi.json is stale
 openapi-version-check: ## Fail if the contract changed vs BASE=<spec.json> without a version bump
 	$(RUN) python scripts/openapi.py check-version $(BASE)
 
+label: ## Open the eval labelling tool (writes evals/dataset/)
+	$(UV) run --directory $(BACKEND) --group demo streamlit run ../frontend/labelling_app.py
+
 eval-validate: ## Check dataset labels, images and the manifest
 	$(RUN) python -m evals validate
 
