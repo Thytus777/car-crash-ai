@@ -56,6 +56,18 @@ class RedactionUnavailableError(AppError):
     title = "Image redaction unavailable"
 
 
+class UnauthorizedError(AppError):
+    status = 401
+    slug = "unauthorized"
+    title = "Authentication required"
+
+
+class RateLimitedError(AppError):
+    status = 429
+    slug = "rate-limited"
+    title = "Too many requests"
+
+
 class NotFoundError(AppError):
     status = 404
     slug = "not-found"

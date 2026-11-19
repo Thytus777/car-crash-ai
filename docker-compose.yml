@@ -28,6 +28,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       SERPAPI_KEY: ${SERPAPI_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      APP_ENV: ${APP_ENV:-development}
+      API_KEYS: ${API_KEYS:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8501}
     volumes:
       - uploads_data:/app/uploads
     depends_on:

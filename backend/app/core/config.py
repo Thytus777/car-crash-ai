@@ -1,9 +1,9 @@
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import SecretStr, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 
 # Values like 'sk-your-key-here' copied from .env.example mean "not set".
 _PLACEHOLDER = re.compile(r"(sk-)?your[-_].*[-_]here", re.IGNORECASE)
@@ -11,6 +11,13 @@ _PLACEHOLDER = re.compile(r"(sk-)?your[-_].*[-_]here", re.IGNORECASE)
 
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    # production enforces API keys, explicit CORS origins and redaction.
+    app_env: Literal["development", "production"] = "development"
+    # Comma-separated. Empty: auth off (development only).
+    api_keys: Annotated[list[SecretStr], NoDecode] = []
+    rate_limit_per_minute: int = 120  # per key (or IP), all endpoints
+    analyze_rate_limit_per_minute: int = 10  # per key, POST /analyze (paid calls)
 
     ai_provider: Literal["gemini", "openai"] = "gemini"
     # Directory under backend/prompts/; recorded in every analysis response.
@@ -86,12 +93,23 @@ class Settings(BaseSettings):
     model_image_max_edge: int = 1024
     model_image_jpeg_quality: int = 90
 
-    cors_origins: list[str] = ["*"]
+    # Comma-separated browser origins allowed to call the API.
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:3000",  # Next.js dev server
+        "http://localhost:8501",  # Streamlit demo
+    ]
 
     # PostgreSQL — asyncpg driver
     database_url: SecretStr = SecretStr(
         "postgresql+asyncpg://postgres:postgres@localhost:5432/carcrash"
     )
+
+    @field_validator("api_keys", "cors_origins", mode="before")
+    @classmethod
+    def _split_csv(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
     @field_validator(
         "openai_api_key",

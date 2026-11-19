@@ -45,3 +45,13 @@ def no_redaction(request: pytest.FixtureRequest) -> Iterator[None]:
         return
     with patch("app.services.image_proc.redact", side_effect=RedactionResult):
         yield
+
+
+@pytest.fixture(autouse=True)
+def fresh_rate_limits() -> Iterator[None]:
+    """Rate-limit buckets live in process memory; start each test empty."""
+    from app.api.access import reset_rate_limits
+
+    reset_rate_limits()
+    yield
+    reset_rate_limits()
