@@ -37,7 +37,8 @@ def _contract(spec: dict[str, Any]) -> dict[str, Any]:
 def main(argv: list[str]) -> int:
     command = argv[1] if len(argv) > 1 else ""
     if command == "export":
-        SPEC_PATH.write_text(dump(generate()), encoding="utf-8")
+        SPEC_PATH.write_text(dump(generate()), encoding="utf-8", newline="
+")
         print(f"wrote {SPEC_PATH.name}")
         return 0
     if command == "check":
