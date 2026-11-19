@@ -2,18 +2,91 @@
 name = "car-crash-ai"
 version = "0.1.0"
 description = "AI-powered vehicle damage detection and cost estimation"
-requires-python = ">=3.11"
+readme = "../README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "python-multipart>=0.0.18",
+    "pillow>=11.0.0",
+    "openai>=1.60.0",
+    "google-genai>=1.0.0",
+    "httpx>=0.28.0",
+    "trafilatura>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "jinja2>=3.1.0",
+    "weasyprint>=62.0",
+]
 
-[tool.ruff]
-target-version = "py311"
-line-length = 88
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+# Streamlit demo UI (frontend/streamlit_app.py); not needed by the API.
+demo = [
+    "streamlit>=1.41.0",
+]
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+[tool.uv]
+default-groups = ["dev"]
+package = false
 
-[tool.ruff.lint.isort]
-known-first-party = ["app"]
+# --- mypy ---------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["app"]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --- pytest -------------------------------------------------------------
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+addopts = ["--strict-markers", "-ra"]
+filterwarnings = [
+    # urllib3 (via trafilatura) warns about optional SOCKS support at import time.
+    "ignore::urllib3.exceptions.DependencyWarning",
+]
+markers = [
+    "unit: fast, deterministic, no network or real LLM (default `make test`)",
+    "integration: FastAPI app via httpx.AsyncClient with fixture LLM responses",
+    "e2e: runs against a deployed environment",
+    "eval: runs the model pipeline on the labelled dataset",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[[tool.mypy.overrides]]
+module = ["weasyprint", "weasyprint.*"]
+ignore_missing_imports = true
+
+# core/llm.py is rewritten around typed structured output in #6; until then
+# only the SDK-boundary checks below are relaxed, everything else stays strict.
+[[tool.mypy.overrides]]
+module = ["app.core.llm"]
+disable_error_code = ["no-any-return", "type-arg", "no-untyped-def", "return-value", "misc", "list-item"]
+warn_unused_ignores = false
