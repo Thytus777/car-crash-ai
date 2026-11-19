@@ -25,10 +25,15 @@ class AnalyzeRequest(BaseModel):
     make: str | None = Field(default=None, description="Override: vehicle make")
     model: str | None = Field(default=None, description="Override: vehicle model")
     year: int | None = Field(default=None, description="Override: vehicle year")
-    vin: str | None = Field(default=None, description="Optional VIN for precise identification")
+    vin: str | None = Field(
+        default=None, description="Optional VIN for precise identification"
+    )
     use_consensus: bool = Field(
         default=False,
-        description="Run both AI providers and merge results for higher confidence (slower, costs more)",
+        description=(
+            "Run both AI providers and merge results for higher confidence "
+            "(slower, costs more)"
+        ),
     )
 
 
@@ -56,7 +61,7 @@ async def analyze_damage(
             confidence=1.0,
         )
     elif request.vin:
-        from app.services.vin_decoder import decode_vin, VINDecodeError
+        from app.services.vin_decoder import VINDecodeError, decode_vin
         try:
             vehicle = await decode_vin(request.vin)
         except VINDecodeError:
@@ -69,7 +74,10 @@ async def analyze_damage(
             except LLMRateLimitError as exc:
                 raise HTTPException(status_code=429, detail=str(exc))
             except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"Vehicle identification failed: {exc}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Vehicle identification failed: {exc}",
+                )
     else:
         try:
             vehicle = await identify_vehicle(request.upload_id)

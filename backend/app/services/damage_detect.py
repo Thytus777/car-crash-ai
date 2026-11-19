@@ -1,4 +1,7 @@
-"""Damage detection service — zone-based prompts, calibrated thresholds, optional consensus."""
+"""Damage detection service.
+
+Zone-based prompts, calibrated thresholds, optional consensus.
+"""
 
 import asyncio
 import json
@@ -8,10 +11,8 @@ from app.core.config import settings
 from app.core.llm import vision_completion
 from app.models.damage import (
     STANDARD_COMPONENTS,
-    AngleGuidance,
     DamageAssessment,
     DamageItem,
-    ImageQualityWarning,
 )
 from app.prompts.damage_assessment import ALL_ZONES, build_zone_prompt
 from app.services.image_proc import assess_angle_coverage, load_images_as_base64
@@ -155,8 +156,8 @@ async def detect_damage(
     angle_guidance = assess_angle_coverage(len(images_b64))
 
     if use_consensus:
-        from app.services.consensus import detect_damage_consensus
         from app.prompts.damage_assessment import DAMAGE_ASSESSMENT_PROMPT
+        from app.services.consensus import detect_damage_consensus
 
         items, consensus_flags = await detect_damage_consensus(
             prompt=DAMAGE_ASSESSMENT_PROMPT,

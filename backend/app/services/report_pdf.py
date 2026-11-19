@@ -6,7 +6,7 @@ Falls back to returning raw HTML bytes if WeasyPrint is not available
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
@@ -27,7 +27,7 @@ def render_report_html(
     """Render the report as an HTML string."""
     template = _jinja_env.get_template("report.html")
     return template.render(
-        report_date=datetime.now(timezone.utc).strftime("%d %B %Y"),
+        report_date=datetime.now(UTC).strftime("%d %B %Y"),
         upload_id=upload_id,
         estimate_id=estimate_id,
         vehicle=report.vehicle,

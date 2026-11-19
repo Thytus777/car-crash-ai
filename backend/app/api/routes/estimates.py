@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
 from app.db.models import EstimateRecord
+from app.db.session import get_db
 from app.models.estimate import AssessmentReport
 
 router = APIRouter()

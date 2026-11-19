@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for persisting estimates and upload sessions."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -16,7 +16,7 @@ class UploadSession(Base):
 
     id: Mapped[str] = mapped_column(String(12), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     image_count: Mapped[int] = mapped_column(Integer, default=0)
     quality_warnings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -44,7 +44,7 @@ class EstimateRecord(Base):
         String(12), ForeignKey("upload_sessions.id"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
 
     # Vehicle

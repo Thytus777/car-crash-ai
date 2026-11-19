@@ -1,4 +1,7 @@
-"""Image preprocessing service — validates, resizes, stores, and quality-checks uploaded images."""
+"""Image preprocessing service.
+
+Validates, resizes, stores, and quality-checks uploaded images.
+"""
 
 import base64
 import statistics
@@ -183,7 +186,8 @@ def check_image_quality(
                 image_filename=filename,
                 warning_type="overexposed",
                 message=(
-                    f"{filename} is overexposed (brightness {mean_brightness:.0f}/255). "
+                    f"{filename} is overexposed "
+                    f"(brightness {mean_brightness:.0f}/255). "
                     "Avoid direct sunlight on the lens or shade the vehicle."
                 ),
             )

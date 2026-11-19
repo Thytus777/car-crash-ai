@@ -84,7 +84,8 @@ class DamageAssessment(BaseModel):
         default_factory=list, description="List of detected damages"
     )
     image_quality_warnings: list[ImageQualityWarning] = Field(
-        default_factory=list, description="Per-image quality issues detected before analysis"
+        default_factory=list,
+        description="Per-image quality issues detected before analysis",
     )
     angle_guidance: AngleGuidance | None = Field(
         default=None, description="Missing photo angles that would improve accuracy"

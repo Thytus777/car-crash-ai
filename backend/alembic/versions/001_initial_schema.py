@@ -4,8 +4,9 @@ Revision ID: 001
 Revises:
 Create Date: 2026-06-02
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "001"
 down_revision = None
@@ -25,7 +26,13 @@ def upgrade() -> None:
     op.create_table(
         "estimates",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("upload_id", sa.String(12), sa.ForeignKey("upload_sessions.id"), nullable=False, index=True),
+        sa.Column(
+            "upload_id",
+            sa.String(12),
+            sa.ForeignKey("upload_sessions.id"),
+            nullable=False,
+            index=True,
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("vehicle_make", sa.String(100), nullable=False),
         sa.Column("vehicle_model", sa.String(100), nullable=False),

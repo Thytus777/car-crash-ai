@@ -8,9 +8,7 @@ import json
 import logging
 
 from app.core.llm import text_completion
-from app.models.damage import DamageAssessment
 from app.models.estimate import AssessmentReport
-from app.models.vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +71,16 @@ async def run_sanity_check(report: AssessmentReport) -> list[str]:
         data = json.loads(cleaned)
         warnings = data.get("warnings", [])
         if not data.get("looks_reasonable", True) and not warnings:
-            warnings = ["AI flagged this assessment as potentially inconsistent — manual review recommended."]
+            warnings = [
+                "AI flagged this assessment as potentially inconsistent — "
+                "manual review recommended."
+            ]
 
-        logger.info("Sanity check result: reasonable=%s, warnings=%d", data.get("looks_reasonable"), len(warnings))
+        logger.info(
+            "Sanity check result: reasonable=%s, warnings=%d",
+            data.get("looks_reasonable"),
+            len(warnings),
+        )
         return [w for w in warnings if w]
 
     except Exception:

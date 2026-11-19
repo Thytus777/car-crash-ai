@@ -52,7 +52,9 @@ class AssessmentReport(BaseModel):
     totals: ReportTotals
     assessment_warnings: list[str] = Field(
         default_factory=list,
-        description="Sanity-check flags — items the AI flagged as uncertain or inconsistent",
+        description=(
+            "Sanity-check flags — items the AI flagged as uncertain or inconsistent"
+        ),
     )
     disclaimer: str = Field(
         default="This is an estimate only, not a quote. "

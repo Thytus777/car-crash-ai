@@ -97,7 +97,9 @@ async def dual_vision_completion(
     async def _secondary() -> str:
         if secondary == "openai":
             return await _retry(
-                lambda: _openai_vision(prompt, images_b64, max_tokens, temperature, "high"),
+                lambda: _openai_vision(
+                    prompt, images_b64, max_tokens, temperature, "high"
+                ),
                 "OpenAI vision (secondary)",
             )
         return await _retry(
@@ -246,7 +248,9 @@ async def _gemini_vision(
         "max_output_tokens": max_tokens + _GEMINI_TOKEN_PADDING,
         "temperature": temperature,
         "response_mime_type": "application/json",
-        "thinking_config": types.ThinkingConfig(thinking_budget=_GEMINI_THINKING_BUDGET),
+        "thinking_config": types.ThinkingConfig(
+            thinking_budget=_GEMINI_THINKING_BUDGET
+        ),
     }
 
     response = await client.aio.models.generate_content(
@@ -273,7 +277,9 @@ async def _gemini_text(
         "max_output_tokens": max_tokens + _GEMINI_TOKEN_PADDING,
         "temperature": temperature,
         "response_mime_type": "application/json",
-        "thinking_config": types.ThinkingConfig(thinking_budget=_GEMINI_THINKING_BUDGET),
+        "thinking_config": types.ThinkingConfig(
+            thinking_budget=_GEMINI_THINKING_BUDGET
+        ),
     }
 
     response = await client.aio.models.generate_content(

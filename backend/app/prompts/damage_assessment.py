@@ -4,6 +4,8 @@ Three zone-specific prompts replace the single broad prompt, reducing missed
 damage that gets overlooked when the model scans the full component list at once.
 """
 
+from app.models.damage import STANDARD_COMPONENTS as _ALL
+
 _SEVERITY_GUIDE = """\
 severity: float from 0.0 to 1.0 where:
   - 0.0-0.1: cosmetic only (light scratch, scuff)
@@ -58,7 +60,6 @@ ALL_ZONES = {
 }
 
 # Kept for backwards-compatible single-pass use
-from app.models.damage import STANDARD_COMPONENTS as _ALL
 _COMPONENT_LIST = ", ".join(_ALL)
 
 DAMAGE_ASSESSMENT_PROMPT = f"""\

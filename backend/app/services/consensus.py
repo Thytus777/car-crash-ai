@@ -6,12 +6,11 @@ then merges results. Components where the two models diverge significantly
 the final report can surface that to the user.
 """
 
-import json
 import logging
 
 from app.core.llm import dual_vision_completion
-from app.models.damage import DamageItem, STANDARD_COMPONENTS
-from app.services.damage_detect import _parse_damage_response, COMPONENT_THRESHOLDS
+from app.models.damage import DamageItem
+from app.services.damage_detect import COMPONENT_THRESHOLDS, _parse_damage_response
 
 logger = logging.getLogger(__name__)
 
