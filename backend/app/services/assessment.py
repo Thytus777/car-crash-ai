@@ -16,6 +16,7 @@ from app.core.errors import (
     UnusableImagesError,
 )
 from app.core.llm import record_llm_calls
+from app.core.tracing import tracer
 from app.models.damage import DamageItem
 from app.models.estimate import (
     AssessmentIssue,
@@ -49,9 +50,19 @@ async def assess(request: AssessmentRequest) -> AssessmentReport | VehicleConfir
 
     Raises typed AppErrors (not-a-vehicle, unusable-images, upstream ...).
     """
-    with record_llm_calls() as calls:
-        result = await _run_pipeline(request)
-    result.meta = AssessmentMeta.from_calls(settings.prompt_version, calls)
+    attributes = {"app.prompt_version": settings.prompt_version}
+    with tracer.start_as_current_span("assess", attributes=attributes) as span:
+        with record_llm_calls() as calls:
+            result = await _run_pipeline(request)
+        result.meta = AssessmentMeta.from_calls(settings.prompt_version, calls)
+        span.set_attributes(
+            {
+                "app.result": result.status,
+                "app.llm_calls": result.meta.llm_calls,
+                "app.input_tokens": result.meta.input_tokens,
+                "app.output_tokens": result.meta.output_tokens,
+            }
+        )
     return result
 
 
@@ -144,9 +155,10 @@ async def _run_pipeline(
         async with limit:
             return await estimate_cost(vehicle, item)
 
-    cost_estimates = list(
-        await asyncio.gather(*(price(d) for d in damage_assessment.damages))
-    )
+    with tracer.start_as_current_span("stage.pricing"):
+        cost_estimates = list(
+            await asyncio.gather(*(price(d) for d in damage_assessment.damages))
+        )
 
     unpriced = [c.component for c in cost_estimates if c.part_cost_avg is None]
     issues.extend(

@@ -39,6 +39,7 @@ import openai
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
+from opentelemetry import trace
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
@@ -48,6 +49,13 @@ from app.core.errors import (
     UpstreamRateLimitedError,
     UpstreamTimeoutError,
     UpstreamUnavailableError,
+)
+from app.core.tracing import (
+    GEN_AI_INPUT_TOKENS,
+    GEN_AI_MODEL,
+    GEN_AI_OUTPUT_TOKENS,
+    GEN_AI_SYSTEM,
+    traced,
 )
 
 logger = logging.getLogger(__name__)
@@ -447,6 +455,7 @@ _sleep = asyncio.sleep
 _random = random.random
 
 
+@traced("llm.call")
 async def _call_provider[T: BaseModel](
     client: ProviderClient,
     schema: type[T],
@@ -478,6 +487,21 @@ async def _call_provider[T: BaseModel](
             cached=attempts > 0 and cached_replies == attempts,
         )
         _log_call(call)
+        trace.get_current_span().set_attributes(
+            {
+                GEN_AI_SYSTEM: call.provider,
+                GEN_AI_MODEL: call.model,
+                GEN_AI_INPUT_TOKENS: call.usage.input_tokens,
+                GEN_AI_OUTPUT_TOKENS: call.usage.output_tokens,
+                "app.llm.task": call.task,
+                "app.llm.ok": call.ok,
+                "app.llm.attempts": call.attempts,
+                "app.llm.invalid_outputs": call.invalid_outputs,
+                "app.llm.cached": call.cached,
+                "app.llm.latency_s": call.latency_s,
+                "app.prompt_version": settings.prompt_version,
+            }
+        )
         return call
 
     while True:

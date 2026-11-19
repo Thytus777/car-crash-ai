@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
 from app.core.llm import generate
+from app.core.tracing import traced, tracer
 from app.models.damage import (
     DAMAGE_ZONES,
     STANDARD_COMPONENTS,
@@ -121,14 +122,15 @@ async def _run_zone_pass(
         "damage_zone", zone_upper=zone.upper(), component_list=", ".join(components)
     )
     try:
-        result = await generate(
-            DamageFindings,
-            prompt,
-            images,
-            task=f"damage_{zone}",
-            max_output_tokens=1500,
-            temperature=0.2,
-        )
+        with tracer.start_as_current_span("damage.zone", attributes={"app.zone": zone}):
+            result = await generate(
+                DamageFindings,
+                prompt,
+                images,
+                task=f"damage_{zone}",
+                max_output_tokens=1500,
+                temperature=0.2,
+            )
     except AppError as exc:
         logger.warning("Zone pass '%s' failed: %s", zone, exc.detail)
         return exc
@@ -136,6 +138,7 @@ async def _run_zone_pass(
     return to_damage_items(result.output.damages)
 
 
+@traced("stage.damage_detection")
 async def detect_damage(
     upload_id: str,
     use_consensus: bool = False,

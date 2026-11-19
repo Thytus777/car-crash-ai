@@ -8,6 +8,7 @@ import logging
 
 from app.core.errors import AppError
 from app.core.llm import generate
+from app.core.tracing import traced
 from app.models.estimate import AssessmentReport
 from app.models.llm_outputs import SanityReview
 from app.prompts import render
@@ -15,6 +16,7 @@ from app.prompts import render
 logger = logging.getLogger(__name__)
 
 
+@traced("stage.sanity_check")
 async def run_sanity_check(report: AssessmentReport) -> list[str] | None:
     """Run a second-pass LLM review of the full report.
 
