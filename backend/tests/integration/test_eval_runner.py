@@ -185,3 +185,21 @@ async def test_low_confidence_id_is_confirmed_with_the_labelled_vehicle(
     assert car.predicted_vehicle is not None and car.predicted_vehicle.make == "Lexus"
     assert car.predicted_damages == {"hood": 0.5}  # ran on with the label's vehicle
     assert metrics.vehicle([car]).make_model_accuracy == 0.0
+
+
+async def test_runs_bypass_the_result_cache(
+    synthetic_dataset: Path,
+    fake_model: SchemaClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "result_cache_enabled", True)
+    monkeypatch.setattr(settings, "result_cache_dir", tmp_path / "results-cache")
+    cases = dataset.load_cases(synthetic_dataset, dataset.LOCAL_IMAGES_ROOT)
+
+    await runner.run(cases)
+    calls_first = fake_model.requests
+    await runner.run(cases)
+
+    assert fake_model.requests == 2 * calls_first  # second run called the model again
+    assert settings.result_cache_enabled is True  # restored afterwards

@@ -81,6 +81,9 @@ class AssessmentMeta(BaseModel):
         None, description="Model spend; null if any model used has no price"
     )
     latency_s: float | None = Field(None, description="Pipeline wall time")
+    cached: bool = Field(
+        False, description="Served from the result cache: no model calls were made"
+    )
     budget_exceeded: list[Literal["cost", "latency"]] = Field(
         default_factory=list, description="Per-request budgets this request exceeded"
     )

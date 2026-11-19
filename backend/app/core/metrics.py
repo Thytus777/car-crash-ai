@@ -47,6 +47,11 @@ BUDGET_EXCEEDED = Counter(
     "Assessments over a per-request budget",
     ["budget"],
 )
+RESULT_CACHE = Counter(
+    "result_cache_total",
+    "Assessment result cache lookups and stores",
+    ["outcome"],  # hit | miss | expired | store
+)
 LLM_DURATION = Histogram(
     "llm_call_duration_seconds",
     "Model time per call, including retries",
