@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Result cache: a new upload of identical photos with the same prompt version, models and options returns the stored complete report with no model calls (`meta.cached`, `result_cache_total`). Entries expire after `RESULT_CACHE_TTL_HOURS` (24), and partial reports are never cached. API 0.5.0 ([#49](https://github.com/Thytus777/car-crash-ai/issues/49)).
 - Load test (`make loadtest`): Locust against the real app with simulated model latency, writing p50/p95/p99 and throughput, together with the settings and machine, to `backend/loadtest/results/` ([#48](https://github.com/Thytus777/car-crash-ai/issues/48)).
 - Cost and latency budgets: model prices live in `backend/app/data/model_pricing.yaml` (shared with the evals). Every model call carries `cost_usd` on its span and in `llm_cost_usd_total`, and every response's `meta` has `cost_usd`, `latency_s` and `budget_exceeded`. Requests over `REQUEST_COST_BUDGET_USD` or `REQUEST_LATENCY_BUDGET_S` are logged and counted in `budget_exceeded_total`, not rejected. API 0.4.0.
 - Prometheus metrics at `/metrics`: HTTP requests and latency by route template, assessments by result, and model calls by outcome and cache status, with token and latency series. Initial SLOs with PromQL and burn-rate alerts are in `docs/SLO.md` ([#16](https://github.com/Thytus777/car-crash-ai/issues/16)).
@@ -34,6 +35,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tests split into `tests/unit` and `tests/integration` with pytest markers.
 
 ### Removed
+- The unused `PRICE_CACHE_TTL_HOURS` setting.
 - Standalone iOS app ([ADR 0001](docs/adr/0001-retire-standalone-ios-app.md)); archived in tag `archive/ios-standalone`.
 - Unused dependencies `beautifulsoup4` and `google-search-results`.
 

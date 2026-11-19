@@ -25,4 +25,7 @@ def isolated_upload_dir(
     """Point uploads at a per-test temp dir so tests never touch ./uploads."""
     upload_dir = tmp_path / "uploads"
     monkeypatch.setattr(settings, "upload_dir", upload_dir)
+    # Off unless a test opts in, so tests never share cached reports.
+    monkeypatch.setattr(settings, "result_cache_enabled", False)
+    monkeypatch.setattr(settings, "result_cache_dir", tmp_path / "result-cache")
     yield upload_dir
