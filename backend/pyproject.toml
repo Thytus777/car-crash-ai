@@ -29,6 +29,7 @@ dev = [
     "aiosqlite>=0.22.1",
     "hypothesis>=6.170.15",
     "mypy>=1.13",
+    "opencv-python-headless>=4.10,<5",
     "pre-commit>=4.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",

@@ -17,7 +17,7 @@ evals/local_images/<case_id>/   photos you may not republish (git-ignored)
 
 `case_id`: lowercase letters, digits, `-` and `_`. Make it descriptive, e.g. `corolla-front-night-01`.
 
-Use the labelling tool (`make label`), which writes `label.json` for you, resizes images to a 1600 px long edge, and blurs faces and number plates. Check the blur before saving, because automatic detection misses some.
+Use the labelling tool (`make label`), which writes `label.json` for you, resizes images to a 1600 px long edge, and blurs faces and number plates. Check the blur before saving. The automatic detection (OpenCV's Haar cascades) handles frontal faces well but misses side-on faces and most non-Russian plate formats, including Australian ones. Add boxes for anything still readable: the coordinates are `x,y,w,h` in pixels of the resized preview.
 
 ## Where photos may come from
 
