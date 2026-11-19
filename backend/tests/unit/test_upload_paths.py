@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.errors import InvalidInputError
 from app.services.image_proc import load_images_as_base64
 
 
@@ -15,7 +16,7 @@ def test_load_images_rejects_ids_that_escape_upload_dir(
     outside.mkdir(parents=True)
     (outside / "secret.jpg").write_bytes(b"not-for-the-llm")
 
-    with pytest.raises(ValueError, match="Invalid upload_id"):
+    with pytest.raises(InvalidInputError, match="Invalid upload_id"):
         load_images_as_base64(upload_id)
 
 

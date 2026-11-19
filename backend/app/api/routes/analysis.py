@@ -1,10 +1,10 @@
 import logging
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.core.llm import LLMRateLimitError
+from app.api.problems import problem_responses
 from app.db.repository import save_estimate
 from app.models.estimate import AssessmentReport, CostEstimate, ReportTotals
 from app.models.vehicle import Vehicle
@@ -46,23 +46,11 @@ class VehicleConfirmNeeded(BaseModel):
     message: str
 
 
-async def _identify_from_images(upload_id: str) -> Vehicle:
-    """Vision-LLM vehicle identification, mapping failures to HTTP errors."""
-    try:
-        return await identify_vehicle(upload_id)
-    except LLMRateLimitError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Vehicle identification failed: {exc}",
-        ) from exc
-
-
 @router.post(
     "/analyze",
     response_model=AssessmentReport | VehicleConfirmNeeded,
     summary="Run full damage analysis on uploaded images",
+    responses=problem_responses(404, 422, 429, 500, 502, 503, 504),
 )
 async def analyze_damage(
     request: AnalyzeRequest,
@@ -82,9 +70,9 @@ async def analyze_damage(
             vehicle = await decode_vin(request.vin)
         except VINDecodeError:
             # VIN failed — fall through to vision ID
-            vehicle = await _identify_from_images(request.upload_id)
+            vehicle = await identify_vehicle(request.upload_id)
     else:
-        vehicle = await _identify_from_images(request.upload_id)
+        vehicle = await identify_vehicle(request.upload_id)
 
         if needs_user_input(vehicle):
             return VehicleConfirmNeeded(
@@ -97,18 +85,10 @@ async def analyze_damage(
             )
 
     # --- Damage detection (zone-based, optionally with consensus) ---
-    try:
-        damage_assessment = await detect_damage(
-            request.upload_id,
-            use_consensus=request.use_consensus,
-        )
-    except LLMRateLimitError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Damage detection failed: {exc}",
-        ) from exc
+    damage_assessment = await detect_damage(
+        request.upload_id,
+        use_consensus=request.use_consensus,
+    )
 
     # --- Cost estimation ---
     cost_estimates: list[CostEstimate] = []

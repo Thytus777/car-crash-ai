@@ -8,6 +8,7 @@ import json
 import logging
 
 from app.core.config import settings
+from app.core.errors import NotFoundError
 from app.core.llm import vision_completion
 from app.models.damage import (
     STANDARD_COMPONENTS,
@@ -152,7 +153,7 @@ async def detect_damage(
     """
     images_b64 = load_images_as_base64(upload_id)
     if not images_b64:
-        raise ValueError(f"No images found for upload {upload_id}")
+        raise NotFoundError(f"Upload {upload_id} has no images")
 
     angle_guidance = assess_angle_coverage(len(images_b64))
 

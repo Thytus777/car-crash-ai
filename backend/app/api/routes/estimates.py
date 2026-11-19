@@ -3,10 +3,12 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.problems import problem_responses
+from app.core.errors import NotFoundError
 from app.db.models import EstimateRecord
 from app.db.session import get_db
 from app.models.estimate import AssessmentReport
@@ -18,6 +20,7 @@ router = APIRouter()
     "/estimates/{estimate_id}",
     response_model=AssessmentReport,
     summary="Retrieve a saved assessment by ID",
+    responses=problem_responses(404, 422),
 )
 async def get_estimate(
     estimate_id: int,
@@ -28,7 +31,7 @@ async def get_estimate(
     )
     record = result.scalar_one_or_none()
     if record is None:
-        raise HTTPException(status_code=404, detail=f"Estimate {estimate_id} not found")
+        raise NotFoundError(f"Estimate {estimate_id} not found")
 
     report = AssessmentReport.model_validate(json.loads(record.report_json))
     return report.model_copy(update={"estimate_id": record.id})
