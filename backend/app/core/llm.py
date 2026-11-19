@@ -50,7 +50,8 @@ from app.core.errors import (
     UpstreamTimeoutError,
     UpstreamUnavailableError,
 )
-from app.core.metrics import LLM_CALLS, LLM_DURATION, LLM_TOKENS
+from app.core.metrics import LLM_CALLS, LLM_COST, LLM_DURATION, LLM_TOKENS
+from app.core.pricing import pricing
 from app.core.tracing import (
     GEN_AI_INPUT_TOKENS,
     GEN_AI_MODEL,
@@ -171,6 +172,7 @@ class LLMCall:
     latency_s: float  # model time: live attempts, or as recorded when cached
     error: str | None = None
     cached: bool = False  # every completion came from the eval cache
+    cost_usd: float | None = None  # None: model has no price entry
 
 
 @dataclass(frozen=True)
@@ -443,6 +445,11 @@ def _providers() -> list[Provider]:
 # --- Call policy ------------------------------------------------------------
 
 
+def _cost(provider: Provider, model: str, usage: Usage) -> float | None:
+    cost = pricing().cost(provider, model, usage.input_tokens, usage.output_tokens)
+    return None if cost is None else float(cost)
+
+
 def backoff_delay(failures: int, rand: float) -> float:
     """Full-jitter exponential backoff: uniform in [0, min(cap, base*2^(n-1))]."""
     ceiling = min(
@@ -486,6 +493,7 @@ async def _call_provider[T: BaseModel](
             latency_s=model_latency,
             error=error,
             cached=attempts > 0 and cached_replies == attempts,
+            cost_usd=_cost(client.provider, model, usage),
         )
         _log_call(call)
         outcome = "ok" if ok else "failed"
@@ -514,6 +522,9 @@ async def _call_provider[T: BaseModel](
                 "app.prompt_version": settings.prompt_version,
             }
         )
+        if call.cost_usd is not None:
+            trace.get_current_span().set_attribute("app.llm.cost_usd", call.cost_usd)
+            LLM_COST.labels(call.provider, call.model).inc(call.cost_usd)
         return call
 
     while True:

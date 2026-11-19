@@ -135,10 +135,46 @@
       "AssessmentMeta": {
         "description": "How a result was produced; ties it to exact prompts and models.",
         "properties": {
+          "budget_exceeded": {
+            "description": "Per-request budgets this request exceeded",
+            "items": {
+              "enum": [
+                "cost",
+                "latency"
+              ],
+              "type": "string"
+            },
+            "title": "Budget Exceeded",
+            "type": "array"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Model spend; null if any model used has no price",
+            "title": "Cost Usd"
+          },
           "input_tokens": {
             "default": 0,
             "title": "Input Tokens",
             "type": "integer"
+          },
+          "latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pipeline wall time",
+            "title": "Latency S"
           },
           "llm_calls": {
             "default": 0,
@@ -909,7 +945,7 @@
   "info": {
     "description": "AI-powered vehicle damage detection and cost estimation",
     "title": "Car Crash AI",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {

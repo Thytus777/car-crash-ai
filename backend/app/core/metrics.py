@@ -37,6 +37,16 @@ LLM_TOKENS = Counter(
     "Model tokens by direction (input / output incl. reasoning)",
     ["provider", "model", "direction"],
 )
+LLM_COST = Counter(
+    "llm_cost_usd_total",
+    "Model spend in USD, for models with a price in app/data/model_pricing.yaml",
+    ["provider", "model"],
+)
+BUDGET_EXCEEDED = Counter(
+    "budget_exceeded_total",
+    "Assessments over a per-request budget",
+    ["budget"],
+)
 LLM_DURATION = Histogram(
     "llm_call_duration_seconds",
     "Model time per call, including retries",
