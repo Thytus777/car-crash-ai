@@ -42,8 +42,9 @@ class ScriptedClient:
     usage: Usage = field(default_factory=lambda: Usage(100, 20))
     requests: list[dict[str, object]] = field(default_factory=list)
 
-    def model_for(self, *, vision: bool) -> str:
-        return f"{self.provider}-{'vision' if vision else 'text'}"
+    def model_for(self, *, vision: bool, tier: str = "strong") -> str:
+        kind = "vision" if vision else "text"
+        return f"{self.provider}-{kind}" + ("-fast" if tier == "fast" else "")
 
     async def complete(
         self,
@@ -54,15 +55,18 @@ class ScriptedClient:
         max_output_tokens: int,
         temperature: float,
         image_detail: ImageDetail,
+        tier: str = "strong",
     ) -> Completion:
         self.requests.append(
-            {"schema": schema, "prompt": prompt, "images": list(images)}
+            {"schema": schema, "prompt": prompt, "images": list(images), "tier": tier}
         )
         step = self.script.pop(0)
         if isinstance(step, BaseException):
             raise step
         return Completion(
-            text=step, usage=self.usage, model=self.model_for(vision=bool(images))
+            text=step,
+            usage=self.usage,
+            model=self.model_for(vision=bool(images), tier=tier),
         )
 
 
@@ -92,8 +96,8 @@ class SchemaClient:
     def __init__(self) -> None:
         self.requests = 0
 
-    def model_for(self, *, vision: bool) -> str:
-        return "fake-model"
+    def model_for(self, *, vision: bool, tier: str = "strong") -> str:
+        return "fake-fast-model" if tier == "fast" else "fake-model"
 
     async def complete(
         self,
@@ -104,6 +108,7 @@ class SchemaClient:
         max_output_tokens: int,
         temperature: float,
         image_detail: ImageDetail,
+        tier: str = "strong",
     ) -> Completion:
         self.requests += 1
         if schema is ImageTriage:

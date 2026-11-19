@@ -9,7 +9,8 @@ from collections.abc import Sequence
 
 from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
-from app.core.llm import generate
+from app.core.llm import Tier, generate
+from app.core.metrics import DAMAGE_ROUTING
 from app.core.tracing import traced, tracer
 from app.models.damage import (
     DAMAGE_ZONES,
@@ -117,12 +118,45 @@ async def _run_zone_pass(
     components: list[str],
     images: Sequence[bytes],
 ) -> list[DamageItem] | AppError:
-    """Run one focused zone prompt; return its items, or the error if it failed."""
+    """Run one zone pass; with routing on, try the fast model first."""
     prompt = render(
         "damage_zone", zone_upper=zone.upper(), component_list=", ".join(components)
     )
+    if _routing_active():
+        fast = await _zone_call(zone, prompt, images, tier="fast")
+        reason = _escalation_reason(fast)
+        if reason is None:
+            DAMAGE_ROUTING.labels("fast_accepted").inc()
+            return fast
+        DAMAGE_ROUTING.labels(f"escalated_{reason}").inc()
+        logger.info("Zone '%s': escalating to the strong model (%s)", zone, reason)
+    return await _zone_call(zone, prompt, images, tier="strong")
+
+
+def _routing_active() -> bool:
+    return settings.routing_enabled and bool(
+        settings.gemini_fast_model or settings.openai_fast_model
+    )
+
+
+def _escalation_reason(outcome: list[DamageItem] | AppError) -> str | None:
+    """Why a fast-model answer isn't good enough, or None to accept it."""
+    if isinstance(outcome, AppError):
+        return "failure"
+    if not outcome and settings.routing_escalate_empty_zones:
+        return "empty"
+    margin = settings.routing_escalation_margin
+    if any(abs(i.severity - _get_threshold(i.component)) <= margin for i in outcome):
+        return "borderline"  # the repair/replace call could flip
+    return None
+
+
+async def _zone_call(
+    zone: str, prompt: str, images: Sequence[bytes], *, tier: Tier
+) -> list[DamageItem] | AppError:
+    attributes = {"app.zone": zone, "app.tier": tier}
     try:
-        with tracer.start_as_current_span("damage.zone", attributes={"app.zone": zone}):
+        with tracer.start_as_current_span("damage.zone", attributes=attributes):
             result = await generate(
                 DamageFindings,
                 prompt,
@@ -130,11 +164,12 @@ async def _run_zone_pass(
                 task=f"damage_{zone}",
                 max_output_tokens=1500,
                 temperature=0.2,
+                tier=tier,
             )
     except AppError as exc:
-        logger.warning("Zone pass '%s' failed: %s", zone, exc.detail)
+        logger.warning("Zone pass '%s' (%s) failed: %s", zone, tier, exc.detail)
         return exc
-    logger.info("Zone '%s': %d finding(s)", zone, len(result.output.damages))
+    logger.info("Zone '%s' (%s): %d finding(s)", zone, tier, len(result.output.damages))
     return to_damage_items(result.output.damages)
 
 

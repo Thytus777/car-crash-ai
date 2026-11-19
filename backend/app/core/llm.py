@@ -64,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 Provider = Literal["gemini", "openai"]
 ImageDetail = Literal["low", "high"]
+Tier = Literal["strong", "fast"]
 
 # --- Errors -----------------------------------------------------------------
 
@@ -295,7 +296,7 @@ def use_completion_cache(cache: CompletionCache) -> Iterator[CompletionCache]:
 class ProviderClient(Protocol):
     provider: Provider
 
-    def model_for(self, *, vision: bool) -> str: ...
+    def model_for(self, *, vision: bool, tier: Tier = "strong") -> str: ...
 
     async def complete(
         self,
@@ -306,6 +307,7 @@ class ProviderClient(Protocol):
         max_output_tokens: int,
         temperature: float,
         image_detail: ImageDetail,
+        tier: Tier = "strong",
     ) -> Completion: ...
 
 
@@ -315,7 +317,9 @@ class GeminiClient:
     def __init__(self, client: Any) -> None:
         self._client = client
 
-    def model_for(self, *, vision: bool) -> str:
+    def model_for(self, *, vision: bool, tier: Tier = "strong") -> str:
+        if tier == "fast" and settings.gemini_fast_model:
+            return settings.gemini_fast_model
         return settings.gemini_model
 
     async def complete(
@@ -327,6 +331,7 @@ class GeminiClient:
         max_output_tokens: int,
         temperature: float,
         image_detail: ImageDetail,
+        tier: Tier = "strong",
     ) -> Completion:
         contents: list[Any] = [prompt]
         contents.extend(
@@ -342,7 +347,7 @@ class GeminiClient:
                 thinking_budget=settings.gemini_thinking_budget
             ),
         )
-        model = self.model_for(vision=bool(images))
+        model = self.model_for(vision=bool(images), tier=tier)
         response = await self._client.aio.models.generate_content(
             model=model, contents=contents, config=config
         )
@@ -364,7 +369,9 @@ class OpenAIClient:
     def __init__(self, client: Any) -> None:
         self._client = client
 
-    def model_for(self, *, vision: bool) -> str:
+    def model_for(self, *, vision: bool, tier: Tier = "strong") -> str:
+        if tier == "fast" and settings.openai_fast_model:
+            return settings.openai_fast_model
         return settings.openai_vision_model if vision else settings.openai_text_model
 
     async def complete(
@@ -376,6 +383,7 @@ class OpenAIClient:
         max_output_tokens: int,
         temperature: float,
         image_detail: ImageDetail,
+        tier: Tier = "strong",
     ) -> Completion:
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         for img in images:
@@ -386,7 +394,7 @@ class OpenAIClient:
                     "image_url": {"url": data_url, "detail": image_detail},
                 }
             )
-        model = self.model_for(vision=bool(images))
+        model = self.model_for(vision=bool(images), tier=tier)
         response = await self._client.chat.completions.parse(
             model=model,
             messages=[{"role": "user", "content": content}],
@@ -474,8 +482,9 @@ async def _call_provider[T: BaseModel](
     max_output_tokens: int,
     temperature: float,
     image_detail: ImageDetail,
+    tier: Tier = "strong",
 ) -> LLMResult[T]:
-    model = client.model_for(vision=bool(images))
+    model = client.model_for(vision=bool(images), tier=tier)
     attempts = transient_failures = invalid_outputs = cached_replies = 0
     usage = Usage()
     model_latency = 0.0
@@ -560,6 +569,7 @@ async def _call_provider[T: BaseModel](
                         max_output_tokens=max_output_tokens,
                         temperature=temperature,
                         image_detail=image_detail,
+                        tier=tier,
                     )
                 elapsed = time.perf_counter() - attempt_started
                 model_latency += elapsed
@@ -620,8 +630,12 @@ async def generate[T: BaseModel](
     max_output_tokens: int,
     temperature: float = 0.2,
     image_detail: ImageDetail = "high",
+    tier: Tier = "strong",
 ) -> LLMResult[T]:
-    """Ask the configured provider(s) for output matching ``schema``."""
+    """Ask the configured provider(s) for output matching ``schema``.
+
+    ``tier="fast"`` uses the provider's fast model if one is configured.
+    """
     last_error: Exception | None = None
     for provider in _providers():
         try:
@@ -634,6 +648,7 @@ async def generate[T: BaseModel](
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
                 image_detail=image_detail,
+                tier=tier,
             )
         except _LLMError as exc:
             logger.warning("%s %s failed: %s", provider, task, exc.detail)

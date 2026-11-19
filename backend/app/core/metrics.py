@@ -52,6 +52,11 @@ RESULT_CACHE = Counter(
     "Assessment result cache lookups and stores",
     ["outcome"],  # hit | miss | expired | store
 )
+DAMAGE_ROUTING = Counter(
+    "damage_routing_total",
+    "Cheap-first routing decisions per damage zone",
+    ["decision"],  # fast_accepted | escalated_failure | _borderline | _empty
+)
 LLM_DURATION = Histogram(
     "llm_call_duration_seconds",
     "Model time per call, including retries",
