@@ -11,7 +11,7 @@ from app.core.errors import AppError
 from app.core.llm import generate
 from app.models.estimate import PriceResult
 from app.models.llm_outputs import PriceExtraction
-from app.prompts.price_extraction import PRICE_EXTRACTION_PROMPT
+from app.prompts import render
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,8 @@ async def _extract_prices(
     results: list[PriceResult] = []
 
     for domain, text in snippets:
-        prompt = PRICE_EXTRACTION_PROMPT.format(
+        prompt = render(
+            "price_extraction",
             site_domain=domain,
             year=year,
             make=make,

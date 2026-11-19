@@ -9,7 +9,7 @@ from app.models.damage import DamageItem
 from app.models.estimate import CostEstimate, PricingMethod
 from app.models.llm_outputs import PriceEstimate
 from app.models.vehicle import Vehicle
-from app.prompts.price_estimation import PRICE_ESTIMATION_PROMPT
+from app.prompts import render
 from app.services.labor import get_labor_cost
 from app.services.price_search import search_part_prices
 from app.services.static_prices import lookup_static_price
@@ -93,7 +93,8 @@ async def _ai_estimate_price(
     vehicle: Vehicle, component: str
 ) -> tuple[Decimal, Decimal, Decimal] | None:
     """Ask the LLM for a price range; None if it couldn't give a usable one."""
-    prompt = PRICE_ESTIMATION_PROMPT.format(
+    prompt = render(
+        "price_estimation",
         year=vehicle.year,
         make=vehicle.make,
         model=vehicle.model,

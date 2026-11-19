@@ -173,3 +173,27 @@ async def test_saved_estimate_round_trips_through_history_endpoints(
     assert fetched.json()["totals"] == created["totals"]
     assert [e["id"] for e in listing.json()] == [created["estimate_id"]]
     assert (await client.get("/api/v1/estimates/999999")).status_code == 404
+
+
+@pytest.mark.usefixtures("pipeline_mocks")
+async def test_every_report_records_the_prompt_version(client: AsyncClient) -> None:
+    body = (await client.post("/api/v1/analyze", json=OVERRIDE_REQUEST)).json()
+
+    assert body["meta"]["prompt_version"] == "v1"
+    assert body["meta"]["llm_calls"] == 0  # all model-backed stages are mocked
+
+
+async def test_confirmation_response_also_records_the_prompt_version(
+    client: AsyncClient,
+) -> None:
+    with patch(
+        "app.api.routes.analysis.identify_vehicle",
+        new_callable=AsyncMock,
+        return_value=_mock_vehicle(confidence=0.4),
+    ):
+        body = (
+            await client.post("/api/v1/analyze", json={"upload_id": UPLOAD_ID})
+        ).json()
+
+    assert body["status"] == "vehicle_confirmation_needed"
+    assert body["meta"]["prompt_version"] == "v1"

@@ -50,6 +50,49 @@ STANDARD_COMPONENTS = [
     "wheel_rear_right",
 ]
 
+
+# Components each zone-focused detection pass looks at.
+DAMAGE_ZONES: dict[str, list[str]] = {
+    "front": [
+        "front_bumper",
+        "hood",
+        "grille",
+        "headlight_left",
+        "headlight_right",
+        "fender_front_left",
+        "fender_front_right",
+        "windshield_front",
+        "a_pillar_left",
+        "a_pillar_right",
+    ],
+    "rear": [
+        "rear_bumper",
+        "trunk",
+        "taillight_left",
+        "taillight_right",
+        "quarter_panel_left",
+        "quarter_panel_right",
+        "windshield_rear",
+    ],
+    "side": [
+        "door_front_left",
+        "door_front_right",
+        "door_rear_left",
+        "door_rear_right",
+        "mirror_left",
+        "mirror_right",
+        "rocker_panel_left",
+        "rocker_panel_right",
+        "b_pillar_left",
+        "b_pillar_right",
+        "roof",
+        "wheel_front_left",
+        "wheel_front_right",
+        "wheel_rear_left",
+        "wheel_rear_right",
+    ],
+}
+
 DamageType = Literal[
     "scratch",
     "dent",

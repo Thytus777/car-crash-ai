@@ -5,9 +5,12 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.api.problems import problem_responses
+from app.core.config import settings
+from app.core.llm import record_llm_calls
 from app.db.repository import save_estimate
 from app.models.estimate import (
     AssessmentIssue,
+    AssessmentMeta,
     AssessmentReport,
     CostEstimate,
     ReportTotals,
@@ -49,6 +52,7 @@ class VehicleConfirmNeeded(BaseModel):
     status: str = "vehicle_confirmation_needed"
     vehicle_guess: Vehicle
     message: str
+    meta: AssessmentMeta | None = None
 
 
 @router.post(
@@ -58,6 +62,19 @@ class VehicleConfirmNeeded(BaseModel):
     responses=problem_responses(404, 422, 429, 500, 502, 503, 504),
 )
 async def analyze_damage(
+    request: AnalyzeRequest,
+) -> AssessmentReport | VehicleConfirmNeeded:
+    with record_llm_calls() as calls:
+        result = await _run_pipeline(request)
+    result.meta = AssessmentMeta.from_calls(settings.prompt_version, calls)
+
+    if isinstance(result, AssessmentReport):
+        # Best-effort: a DB failure leaves estimate_id unset (see #1).
+        result.estimate_id = await save_estimate(result, request.upload_id, request.vin)
+    return result
+
+
+async def _run_pipeline(
     request: AnalyzeRequest,
 ) -> AssessmentReport | VehicleConfirmNeeded:
     # --- Vehicle identification ---
@@ -156,8 +173,5 @@ async def analyze_damage(
     report.assessment_warnings = warnings or []
     report.issues = issues
     report.status = "partial" if issues else "complete"
-
-    # --- Persist (best-effort: a DB failure leaves estimate_id unset) ---
-    report.estimate_id = await save_estimate(report, request.upload_id, request.vin)
 
     return report

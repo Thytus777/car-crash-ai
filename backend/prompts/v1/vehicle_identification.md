@@ -1,6 +1,3 @@
-"""Vision LLM prompt for vehicle identification."""
-
-VEHICLE_ID_PROMPT = """\
 Analyze the provided images of a vehicle. Identify the vehicle with the
 following details. Return ONLY valid JSON, no other text.
 
@@ -12,4 +9,3 @@ following details. Return ONLY valid JSON, no other text.
   "color": "string",
   "confidence": float 0.0-1.0 (how confident you are in this identification)
 }}
-"""

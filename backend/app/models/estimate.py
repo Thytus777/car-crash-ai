@@ -1,8 +1,10 @@
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import BaseModel, Field
 
+from app.core.llm import LLMCall
 from app.models.damage import DamageAssessment
 from app.models.vehicle import Vehicle
 
@@ -65,7 +67,30 @@ class AssessmentIssue(BaseModel):
     detail: str
 
 
+class AssessmentMeta(BaseModel):
+    """How a result was produced; ties it to exact prompts and models."""
+
+    prompt_version: str
+    models: list[str] = Field(
+        default_factory=list, description="Distinct provider/model IDs that answered"
+    )
+    llm_calls: int = Field(0, description="Model calls made (provider attempts)")
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    @classmethod
+    def from_calls(cls, prompt_version: str, calls: Sequence[LLMCall]) -> Self:
+        return cls(
+            prompt_version=prompt_version,
+            models=sorted({f"{c.provider}/{c.model}" for c in calls if c.ok}),
+            llm_calls=sum(c.attempts for c in calls),
+            input_tokens=sum(c.usage.input_tokens for c in calls),
+            output_tokens=sum(c.usage.output_tokens for c in calls),
+        )
+
+
 class AssessmentReport(BaseModel):
+    meta: AssessmentMeta | None = None
     status: Literal["complete", "partial"] = Field(
         default="complete",
         description="'partial' when any stage degraded; see issues",
