@@ -49,7 +49,11 @@ class Settings(BaseSettings):
     pricing_concurrency: int = 4  # damaged components priced at once
     price_page_concurrency: int = 5  # pages fetched/extracted at once per part
     price_search_deadline_s: float = 20.0  # then fall back to static/AI price
-    price_cache_ttl_hours: int = 24
+    # Complete reports for identical photos + settings are reused (see
+    # app/services/result_cache.py); prices drift, hence the TTL.
+    result_cache_enabled: bool = True
+    result_cache_dir: Path = Path("cache/results")
+    result_cache_ttl_hours: float = 24
     severity_replace_threshold: float = 0.3
 
     upload_dir: Path = Path("uploads")

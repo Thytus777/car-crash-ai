@@ -28,8 +28,10 @@ from app.models.estimate import (
     VehicleConfirmNeeded,
 )
 from app.models.vehicle import Vehicle
+from app.services import result_cache
 from app.services.cost_estimate import compute_totals, estimate_cost
 from app.services.damage_detect import detect_damage
+from app.services.image_proc import load_images
 from app.services.image_triage import triage_images
 from app.services.sanity_check import run_sanity_check
 from app.services.vehicle_id import identify_vehicle, needs_user_input
@@ -53,6 +55,27 @@ async def assess(request: AssessmentRequest) -> AssessmentReport | VehicleConfir
     Raises typed AppErrors (not-a-vehicle, unusable-images, upstream ...).
     """
     started = time.perf_counter()
+    key = None
+    if settings.result_cache_enabled:
+        options = {
+            "make": request.make,
+            "model": request.model,
+            "year": request.year,
+            "vin": request.vin,
+            "use_consensus": request.use_consensus,
+        }
+        key = result_cache.cache_key(load_images(request.upload_id), options)
+        hit = result_cache.get(key)
+        if hit is not None:
+            hit.estimate_id = None
+            hit.meta = AssessmentMeta(
+                prompt_version=settings.prompt_version,
+                cached=True,
+                cost_usd=0.0,
+                latency_s=time.perf_counter() - started,
+            )
+            ASSESSMENTS.labels("complete").inc()
+            return hit
     attributes = {"app.prompt_version": settings.prompt_version}
     with tracer.start_as_current_span("assess", attributes=attributes) as span:
         with record_llm_calls() as calls:
@@ -68,6 +91,8 @@ async def assess(request: AssessmentRequest) -> AssessmentReport | VehicleConfir
         result.meta = AssessmentMeta.from_calls(settings.prompt_version, calls)
         result.meta.latency_s = time.perf_counter() - started
         _check_budgets(result.meta)
+        if key is not None and isinstance(result, AssessmentReport):
+            result_cache.put(key, result)
         span.set_attributes(
             {
                 "app.result": result.status,
