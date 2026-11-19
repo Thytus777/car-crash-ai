@@ -120,9 +120,14 @@ async def run(cases: Sequence[Case], concurrency: int = 4) -> list[CaseResult]:
         async with limit:
             return await run_case(case)
 
+    original_result_cache = settings.result_cache_enabled
     with tempfile.TemporaryDirectory(prefix="car-crash-eval-") as tmp:
         settings.upload_dir = Path(tmp)
+        # Every case must run the pipeline. Replays come from the LLM-level
+        # CompletionCache, which keeps per-call latency and tokens.
+        settings.result_cache_enabled = False
         try:
             return list(await asyncio.gather(*(bounded(c) for c in cases)))
         finally:
             settings.upload_dir = original_upload_dir
+            settings.result_cache_enabled = original_result_cache
