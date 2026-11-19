@@ -18,8 +18,9 @@ Car Crash AI: crash photos go in, a vision LLM identifies damaged components, an
 
 ## Request flow
 
-`POST /api/v1/upload` validates, resizes and stores the images, then returns an `upload_id`. `POST /api/v1/analyze` then runs four stages:
+`POST /api/v1/upload` validates, resizes and stores the images, then returns an `upload_id`. `POST /api/v1/analyze` then runs five stages:
 
+0. **Image triage:** one low-detail call checks that the photos show a usable vehicle; otherwise it returns a 422 with the reason. If triage itself fails, the request continues with an issue.
 1. **Vehicle ID:** request override, then VIN (NHTSA), then vision LLM. If confidence is below 0.7 it returns `vehicle_confirmation_needed`.
 2. **Damage detection:** three zone prompts run in parallel (front, rear, side), or two-provider consensus.
 3. **Pricing per component:** live search (SerpAPI, then fetched pages, then LLM extraction), then the static CSV, then an LLM estimate.

@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Input validation: per-file, total and count limits (413), format detected from the file bytes (415, JPEG/PNG/WebP), and an image-triage step that rejects non-vehicle or unusable photos with a reason (422). Prompt v3 adds the triage prompt ([#27](https://github.com/Thytus777/car-crash-ai/issues/27)).
 - Makefile entry point; CI runs the same targets.
 - uv-managed dependencies with a committed `uv.lock` and Python 3.12 pin.
 - ruff (lint + format), mypy `--strict`, pre-commit hooks (gitleaks, Conventional Commits).

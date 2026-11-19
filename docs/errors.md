@@ -19,7 +19,6 @@ Clients should branch on `type` (stable) or `status`, and show `detail` to the u
 **400.** The request was well-formed but its content can't be processed. Examples:
 - an uploaded file isn't a valid image
 - an image is below the minimum resolution
-- too many images in one upload
 
 ## not-found
 
@@ -28,6 +27,25 @@ Clients should branch on `type` (stable) or `status`, and show `detail` to the u
 ## method-not-allowed
 
 **405.** The route exists, but not for this HTTP method.
+
+## payload-too-large
+
+**413.** One of the size limits was exceeded:
+- too many images
+- a single file over `MAX_UPLOAD_SIZE_MB` (default 20)
+- all files together over `MAX_UPLOAD_TOTAL_MB` (default 40)
+
+## unsupported-media-type
+
+**415.** The file decodes as an image, but not as JPEG, PNG or WebP. The format is detected from the file contents; the `Content-Type` header is ignored.
+
+## not-a-vehicle
+
+**422.** Image triage found no road vehicle in any uploaded photo. `detail` says what was seen.
+
+## unusable-images
+
+**422.** A vehicle is visible, but no photo shows it clearly enough to judge damage (too dark, blurry, distant or obstructed). `detail` says what to retake.
 
 ## validation-error
 
