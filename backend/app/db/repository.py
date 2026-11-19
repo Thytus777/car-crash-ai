@@ -35,9 +35,9 @@ async def save_estimate(
                 vehicle_year=report.vehicle.year,
                 vehicle_vin=vin,
                 vehicle_confidence=report.vehicle.confidence,
-                parts_total=float(report.totals.parts_total),
-                labor_total=float(report.totals.labor_total),
-                grand_total=float(report.totals.grand_total),
+                parts_total=report.totals.parts_total,
+                labor_total=report.totals.labor_total,
+                grand_total=report.totals.grand_total,
                 report_json=report.model_dump_json(),
             )
             session.add(record)

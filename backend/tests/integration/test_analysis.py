@@ -116,7 +116,9 @@ async def test_analyze_persists_estimate_and_returns_its_id(
         record = await session.get(EstimateRecord, estimate_id)
         assert record is not None
         assert record.upload_id == UPLOAD_ID
-        assert record.grand_total == pytest.approx(542.50)
+        # Money is stored as NUMERIC, so it round-trips exactly (#11).
+        assert record.grand_total == Decimal("542.50")
+        assert isinstance(record.grand_total, Decimal)
         upload = await session.scalar(
             select(UploadSession).where(UploadSession.id == UPLOAD_ID)
         )

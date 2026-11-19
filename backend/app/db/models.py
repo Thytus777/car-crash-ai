@@ -2,9 +2,10 @@
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -57,9 +58,9 @@ class EstimateRecord(Base):
     vehicle_confidence: Mapped[float] = mapped_column(Float, default=1.0)
 
     # Totals
-    parts_total: Mapped[float] = mapped_column(Float)
-    labor_total: Mapped[float] = mapped_column(Float)
-    grand_total: Mapped[float] = mapped_column(Float)
+    parts_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    labor_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    grand_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))
 
     # Full report stored as JSON for retrieval
     report_json: Mapped[str] = mapped_column(Text)
