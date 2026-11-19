@@ -36,8 +36,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",
+    "bandit>=1.9.4",
     "hypothesis>=6.170.15",
     "mypy>=1.13",
+    "pip-audit>=2.10.1",
     "pre-commit>=4.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
@@ -104,3 +106,10 @@ skip_covered = true
 [[tool.mypy.overrides]]
 module = ["weasyprint", "weasyprint.*"]
 ignore_missing_imports = true
+
+# --- bandit -------------------------------------------------------------
+
+[tool.bandit]
+# B101: asserts here narrow types for mypy; none guards a security property,
+# and the code doesn't run with -O.
+skips = ["B101"]

@@ -37,6 +37,7 @@ All LLM traffic goes through `app/core/llm.py`.
 - `make test`: unit suite, the inner loop.
 - `make coverage`: unit + integration with the CI coverage gate.
 - `make lint typecheck`: ruff, then mypy `--strict`.
+- `make security`: pip-audit on the locked runtime deps, plus bandit. CI also runs gitleaks and CodeQL.
 
 Gotchas:
 - Dependencies change only through `uv add` / `uv lock` in `backend/`. CI fails if `uv.lock` disagrees with `pyproject.toml`.

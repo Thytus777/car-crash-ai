@@ -50,6 +50,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unexpected errors no longer leak exception text in responses.
 
 ### Security
+- Supply chain: a required `security` CI job runs pip-audit (locked runtime deps, `--strict`), bandit and gitleaks over the full history. CodeQL (security-extended) covers Python and TypeScript on PRs and weekly. Dependabot sends grouped weekly updates for uv, npm, GitHub Actions and Docker.
 - API-key auth (`API_KEYS`; `X-API-Key` or Bearer) on `/api/v1/*` and `/metrics`. Per-client token-bucket rate limits, with a tighter one for `/analyze` (429 `rate-limited` with `Retry-After`). CORS no longer combines `*` with credentials; the defaults are the local dev origins. `APP_ENV=production` refuses to start without keys, with wildcard CORS, or without required redaction. API 0.7.0 ([#9](https://github.com/Thytus777/car-crash-ai/issues/9)).
 - Untrusted input hardening ([#8](https://github.com/Thytus777/car-crash-ai/issues/8)):
   - Prompt v4 fences scraped page text in `<page>` tags declared as untrusted, and page text can't close the fence.
