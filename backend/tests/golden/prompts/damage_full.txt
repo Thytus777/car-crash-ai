@@ -1,0 +1,24 @@
+Analyze the provided images of a damaged vehicle. Identify ALL visible damage.
+
+For each damaged component, provide:
+- component: use ONLY names from this list: [front_bumper, rear_bumper, hood, trunk, grille, headlight_left, headlight_right, taillight_left, taillight_right, fender_front_left, fender_front_right, door_front_left, door_front_right, door_rear_left, door_rear_right, mirror_left, mirror_right, quarter_panel_left, quarter_panel_right, rocker_panel_left, rocker_panel_right, windshield_front, windshield_rear, roof, a_pillar_left, a_pillar_right, b_pillar_left, b_pillar_right, wheel_front_left, wheel_front_right, wheel_rear_left, wheel_rear_right]
+- damage_type: one of [scratch, dent, crack, shatter, crush, deformation, missing]
+- severity: float from 0.0 to 1.0 where:
+  - 0.0-0.1: cosmetic only (light scratch, scuff)
+  - 0.1-0.3: minor (small dent, paint chip, repairable)
+  - 0.3-0.6: moderate (significant dent, crack, replacement recommended)
+  - 0.6-0.8: severe (large deformation, shattered, replacement required)
+  - 0.8-1.0: destroyed (component non-functional/missing)
+- description: brief description of the damage observed
+
+Return ONLY a valid JSON object ("damages" is an empty array if nothing is damaged):
+{
+  "damages": [
+    {
+      "component": "<component_name>",
+      "damage_type": "<scratch|dent|crack|shatter|crush|deformation|missing>",
+      "severity": 0.0,
+      "description": "<brief description>"
+    }
+  ]
+}

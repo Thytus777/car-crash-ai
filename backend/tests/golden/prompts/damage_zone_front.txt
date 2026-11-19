@@ -1,0 +1,28 @@
+Carefully examine these vehicle images and focus ONLY on the FRONT ZONE.
+Look specifically for damage on these components: [front_bumper, hood, grille, headlight_left, headlight_right, fender_front_left, fender_front_right, windshield_front, a_pillar_left, a_pillar_right].
+Ignore all other parts of the vehicle.
+
+For each damaged component from the list above, provide:
+- component: exact name from [front_bumper, hood, grille, headlight_left, headlight_right, fender_front_left, fender_front_right, windshield_front, a_pillar_left, a_pillar_right]
+- damage_type: one of [scratch, dent, crack, shatter, crush, deformation, missing]
+- severity: float from 0.0 to 1.0 where:
+  - 0.0-0.1: cosmetic only (light scratch, scuff)
+  - 0.1-0.3: minor (small dent, paint chip, repairable)
+  - 0.3-0.6: moderate (significant dent, crack, replacement recommended)
+  - 0.6-0.8: severe (large deformation, shattered, replacement required)
+  - 0.8-1.0: destroyed (component non-functional/missing)
+- description: brief description of the specific damage you observe
+
+If none of these components are damaged, return an empty array.
+
+Return ONLY a valid JSON object ("damages" is an empty array if nothing is damaged):
+{
+  "damages": [
+    {
+      "component": "<component_name>",
+      "damage_type": "<scratch|dent|crack|shatter|crush|deformation|missing>",
+      "severity": 0.0,
+      "description": "<brief description>"
+    }
+  ]
+}

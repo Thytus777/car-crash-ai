@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.problems import install_problem_handlers
 from app.api.routes import analysis, estimate, estimates, report, upload
 from app.core.config import settings
+from app.prompts import validate_prompts
 
 app = FastAPI(
     title="Car Crash AI",
@@ -11,6 +12,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+validate_prompts()  # fail at startup, not on the first request
 install_problem_handlers(app)
 
 app.add_middleware(

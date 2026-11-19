@@ -11,12 +11,14 @@ from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
 from app.core.llm import generate
 from app.models.damage import (
+    DAMAGE_ZONES,
+    STANDARD_COMPONENTS,
     DamageAssessment,
     DamageItem,
     Recommendation,
 )
 from app.models.llm_outputs import DamageFinding, DamageFindings
-from app.prompts.damage_assessment import ALL_ZONES, build_zone_prompt
+from app.prompts import render
 from app.services.image_proc import assess_angle_coverage, load_images
 
 logger = logging.getLogger(__name__)
@@ -111,7 +113,9 @@ async def _run_zone_pass(
     images: Sequence[bytes],
 ) -> list[DamageItem] | AppError:
     """Run one focused zone prompt; return its items, or the error if it failed."""
-    prompt = build_zone_prompt(zone, components)
+    prompt = render(
+        "damage_zone", zone_upper=zone.upper(), component_list=", ".join(components)
+    )
     try:
         result = await generate(
             DamageFindings,
@@ -145,11 +149,10 @@ async def detect_damage(
     angle_guidance = assess_angle_coverage(len(images))
 
     if use_consensus:
-        from app.prompts.damage_assessment import DAMAGE_ASSESSMENT_PROMPT
         from app.services.consensus import detect_damage_consensus
 
         items, consensus_flags = await detect_damage_consensus(
-            prompt=DAMAGE_ASSESSMENT_PROMPT,
+            prompt=render("damage_full", component_list=", ".join(STANDARD_COMPONENTS)),
             images=images,
         )
         return DamageAssessment(
@@ -161,9 +164,9 @@ async def detect_damage(
     # Zone-based parallel passes (default)
     zone_tasks = [
         _run_zone_pass(zone, components, images)
-        for zone, components in ALL_ZONES.items()
+        for zone, components in DAMAGE_ZONES.items()
     ]
-    outcomes = dict(zip(ALL_ZONES, await asyncio.gather(*zone_tasks), strict=True))
+    outcomes = dict(zip(DAMAGE_ZONES, await asyncio.gather(*zone_tasks), strict=True))
     failed = {z: o for z, o in outcomes.items() if isinstance(o, AppError)}
     if len(failed) == len(outcomes):
         # Nothing was assessed: an empty damage list would read as "no damage".

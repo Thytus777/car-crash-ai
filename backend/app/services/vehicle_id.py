@@ -6,7 +6,7 @@ from app.core.errors import NotFoundError
 from app.core.llm import generate
 from app.models.llm_outputs import VehicleIdentification
 from app.models.vehicle import Vehicle
-from app.prompts.vehicle_identification import VEHICLE_ID_PROMPT
+from app.prompts import render
 from app.services.image_proc import load_images
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ async def identify_vehicle(upload_id: str) -> Vehicle:
 
     result = await generate(
         VehicleIdentification,
-        VEHICLE_ID_PROMPT,
+        render("vehicle_identification"),
         images,
         task="vehicle_id",
         max_output_tokens=300,
