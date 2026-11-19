@@ -24,12 +24,12 @@ def pipeline() -> Iterator[AsyncMock]:
     """Stub the stages after triage; yields the damage-detection mock."""
     with (
         patch(
-            "app.api.routes.analysis.detect_damage",
+            "app.services.assessment.detect_damage",
             new_callable=AsyncMock,
             return_value=DamageAssessment(),
         ) as detect,
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=[],
         ),

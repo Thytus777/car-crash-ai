@@ -71,17 +71,17 @@ def pipeline_mocks() -> Iterator[None]:
     """Stub every LLM-backed stage after vehicle ID."""
     with (
         patch(
-            "app.api.routes.analysis.detect_damage",
+            "app.services.assessment.detect_damage",
             new_callable=AsyncMock,
             return_value=_mock_damage(),
         ),
         patch(
-            "app.api.routes.analysis.estimate_cost",
+            "app.services.assessment.estimate_cost",
             new_callable=AsyncMock,
             return_value=_mock_cost(),
         ),
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -150,7 +150,7 @@ async def test_analyze_low_confidence_returns_confirmation(
     client: AsyncClient,
 ) -> None:
     with patch(
-        "app.api.routes.analysis.identify_vehicle",
+        "app.services.assessment.identify_vehicle",
         new_callable=AsyncMock,
         return_value=_mock_vehicle(confidence=0.4),
     ):
@@ -190,7 +190,7 @@ async def test_confirmation_response_also_records_the_prompt_version(
     client: AsyncClient,
 ) -> None:
     with patch(
-        "app.api.routes.analysis.identify_vehicle",
+        "app.services.assessment.identify_vehicle",
         new_callable=AsyncMock,
         return_value=_mock_vehicle(confidence=0.4),
     ):
@@ -215,7 +215,7 @@ async def test_failed_vin_decode_still_asks_to_confirm_a_weak_vision_id(
             side_effect=VINDecodeError("NHTSA unreachable"),
         ),
         patch(
-            "app.api.routes.analysis.identify_vehicle",
+            "app.services.assessment.identify_vehicle",
             new_callable=AsyncMock,
             return_value=_mock_vehicle(confidence=0.4),
         ),

@@ -68,13 +68,13 @@ async def test_degraded_stages_make_the_report_partial(client: AsyncClient) -> N
     )
     with (
         patch(
-            "app.api.routes.analysis.detect_damage",
+            "app.services.assessment.detect_damage",
             new_callable=AsyncMock,
             return_value=damage,
         ),
-        patch("app.api.routes.analysis.estimate_cost", side_effect=_cost),
+        patch("app.services.assessment.estimate_cost", side_effect=_cost),
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=None,
         ),
@@ -98,13 +98,13 @@ async def test_clean_run_is_complete_with_no_issues(client: AsyncClient) -> None
     damage = DamageAssessment(damages=[_item("front_bumper")])
     with (
         patch(
-            "app.api.routes.analysis.detect_damage",
+            "app.services.assessment.detect_damage",
             new_callable=AsyncMock,
             return_value=damage,
         ),
-        patch("app.api.routes.analysis.estimate_cost", side_effect=_cost),
+        patch("app.services.assessment.estimate_cost", side_effect=_cost),
         patch(
-            "app.api.routes.analysis.run_sanity_check",
+            "app.services.assessment.run_sanity_check",
             new_callable=AsyncMock,
             return_value=[],
         ),

@@ -64,7 +64,7 @@ def triage(request: pytest.FixtureRequest) -> Iterator[AsyncMock]:
     """Image triage passes by default; tests set .return_value/.side_effect."""
     ok = ImageTriage(shows_vehicle=True, usable=True, reason="A clear photo of a car.")
     with patch(
-        "app.api.routes.analysis.triage_images",
+        "app.services.assessment.triage_images",
         new_callable=AsyncMock,
         return_value=ok,
     ) as mock:

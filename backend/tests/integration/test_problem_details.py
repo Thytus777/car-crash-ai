@@ -64,7 +64,7 @@ async def test_invalid_image_is_a_400_problem(client: AsyncClient) -> None:
 
 async def test_llm_rate_limit_is_a_429_problem(client: AsyncClient) -> None:
     with patch(
-        "app.api.routes.analysis.identify_vehicle",
+        "app.services.assessment.identify_vehicle",
         new_callable=AsyncMock,
         side_effect=LLMRateLimitError("All AI providers are rate-limited."),
     ):
@@ -78,7 +78,7 @@ async def test_unexpected_error_is_a_generic_500_without_internals(
     lenient_client: AsyncClient,
 ) -> None:
     with patch(
-        "app.api.routes.analysis.identify_vehicle",
+        "app.services.assessment.identify_vehicle",
         new_callable=AsyncMock,
         side_effect=RuntimeError("db password is hunter2"),
     ):

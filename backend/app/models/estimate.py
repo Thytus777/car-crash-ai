@@ -118,3 +118,10 @@ class AssessmentReport(BaseModel):
         "Actual repair costs may vary based on local labor rates, "
         "parts availability, and shop assessment."
     )
+
+
+class VehicleConfirmNeeded(BaseModel):
+    status: str = "vehicle_confirmation_needed"
+    vehicle_guess: Vehicle
+    message: str
+    meta: AssessmentMeta | None = None
