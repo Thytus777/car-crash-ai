@@ -23,8 +23,10 @@ RUN .venv/bin/python scripts/fetch_models.py
 # --- runtime: slim, non-root, only what the service needs -------------------
 FROM ${PYTHON_IMAGE} AS runtime
 
-# weasyprint (PDF reports) needs these shared libraries.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Apply Debian security updates (the pinned base can lag behind fixes; Trivy
+# gates the result), then add the shared libraries weasyprint (PDFs) needs.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
         libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
         libgdk-pixbuf-2.0-0 libcairo2 libxml2 libxslt1.1 \
     && rm -rf /var/lib/apt/lists/* \
