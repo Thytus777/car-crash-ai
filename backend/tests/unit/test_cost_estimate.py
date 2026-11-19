@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.config import settings
 from app.core.llm import LLMOutputError
 from app.models.damage import DamageItem
 from app.models.estimate import PriceResult
@@ -10,6 +11,7 @@ from app.models.vehicle import Vehicle
 from app.services.cost_estimate import estimate_cost
 from app.services.labor import get_labor_cost, get_labor_hours
 from app.services.static_prices import lookup_static_price
+from tests.concurrency import PeakTracker
 
 
 def test_labor_hours_known_component() -> None:
@@ -178,3 +180,32 @@ async def test_failed_ai_estimate_is_unpriced_not_made_up() -> None:
     assert result.pricing_method == "unpriced"
     assert result.part_cost_avg is None and result.total_avg is None
     assert result.labor_cost > 0  # labour is still known
+
+
+async def test_slow_live_search_falls_back_to_static_price(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for #7: a slow search used to hold up the whole request."""
+    monkeypatch.setattr(settings, "price_search_deadline_s", 0.01)
+    tracker = PeakTracker()
+    slow_search = tracker.wrap(lambda **_: [_live_result()], hold_s=0.5)
+    vehicle = Vehicle(make="Toyota", model="Camry", year=2020)
+    damage = DamageItem(
+        component="front_bumper",
+        damage_type="crush",
+        severity=0.8,
+        description="Crushed",
+        recommendation="replace",
+    )
+
+    with patch(
+        "app.services.cost_estimate.search_part_prices", side_effect=slow_search
+    ):
+        result = await estimate_cost(vehicle, damage)
+
+    assert result.pricing_method == "static_reference"
+    assert result.part_cost_avg == Decimal("280.00")
+
+
+def _live_result() -> PriceResult:
+    return PriceResult(price=Decimal("999.00"), confidence=0.9)

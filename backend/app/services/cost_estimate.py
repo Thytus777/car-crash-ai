@@ -1,8 +1,10 @@
 """Cost estimation service — orchestrates live price search + labor calculation."""
 
+import asyncio
 import logging
 from decimal import Decimal
 
+from app.core.config import settings
 from app.core.errors import AppError
 from app.core.llm import generate
 from app.models.damage import DamageItem
@@ -24,12 +26,21 @@ async def estimate_cost(
     """Estimate repair/replacement cost for a single damaged component."""
     labor_hours, labor_rate, labor_cost = get_labor_cost(damage.component)
 
-    live_results = await search_part_prices(
-        make=vehicle.make,
-        model=vehicle.model,
-        year=vehicle.year,
-        component=damage.component,
-    )
+    try:
+        async with asyncio.timeout(settings.price_search_deadline_s):
+            live_results = await search_part_prices(
+                make=vehicle.make,
+                model=vehicle.model,
+                year=vehicle.year,
+                component=damage.component,
+            )
+    except TimeoutError:
+        logger.warning(
+            "Live price search for %s exceeded %.0fs; using fallback pricing",
+            damage.component,
+            settings.price_search_deadline_s,
+        )
+        live_results = []
 
     pricing_method: PricingMethod
     if live_results:
