@@ -21,6 +21,8 @@ attempts, latency); wrap work in ``record_llm_calls()`` to collect them.
 
 import asyncio
 import base64
+import hashlib
+import json
 import logging
 import random
 import time
@@ -28,6 +30,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, Protocol
 
 import httpx
@@ -156,8 +159,9 @@ class LLMCall:
     attempts: int  # requests sent, including retries
     invalid_outputs: int  # replies that failed schema validation
     usage: Usage  # summed over all attempts
-    latency_s: float
+    latency_s: float  # model time: live attempts, or as recorded when cached
     error: str | None = None
+    cached: bool = False  # every completion came from the eval cache
 
 
 @dataclass(frozen=True)
@@ -166,24 +170,112 @@ class LLMResult[T: BaseModel]:
     call: LLMCall
 
 
-_call_log: ContextVar[list[LLMCall] | None] = ContextVar("llm_call_log", default=None)
+# Active collectors, innermost last; every call is appended to all of them,
+# so a nested record_llm_calls() doesn't hide calls from an outer one.
+_call_logs: ContextVar[tuple[list[LLMCall], ...]] = ContextVar(
+    "llm_call_logs", default=()
+)
 
 
 @contextmanager
 def record_llm_calls() -> Iterator[list[LLMCall]]:
     """Collect every LLMCall made inside the block (including child tasks)."""
     calls: list[LLMCall] = []
-    token = _call_log.set(calls)
+    token = _call_logs.set((*_call_logs.get(), calls))
     try:
         yield calls
     finally:
-        _call_log.reset(token)
+        _call_logs.reset(token)
 
 
 def _log_call(call: LLMCall) -> None:
-    calls = _call_log.get()
-    if calls is not None:
+    for calls in _call_logs.get():
         calls.append(call)
+
+
+# --- Completion cache (evals) ------------------------------------------------
+
+
+class CompletionCache:
+    """Disk cache of raw completions, so eval runs can be replayed for free.
+
+    The key covers everything that determines the reply: provider, model,
+    prompt version, schema, prompt text, image hashes, generation settings,
+    and how many invalid replies preceded this one (so re-asks replay in
+    order). Errors are never cached.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+        self.hits = 0
+        self.misses = 0
+
+    def key(
+        self,
+        *,
+        provider: Provider,
+        model: str,
+        schema: type[BaseModel],
+        prompt: str,
+        images: Sequence[bytes],
+        max_output_tokens: int,
+        temperature: float,
+        image_detail: ImageDetail,
+        reply_index: int,
+    ) -> str:
+        material = {
+            "provider": provider,
+            "model": model,
+            "prompt_version": settings.prompt_version,
+            "schema": schema.model_json_schema(),
+            "prompt": hashlib.sha256(prompt.encode()).hexdigest(),
+            "images": [hashlib.sha256(i).hexdigest() for i in images],
+            "max_output_tokens": max_output_tokens,
+            "temperature": temperature,
+            "image_detail": image_detail,
+            "reply_index": reply_index,
+        }
+        blob = json.dumps(material, sort_keys=True).encode()
+        return hashlib.sha256(blob).hexdigest()
+
+    def get(self, key: str) -> tuple[Completion, float] | None:
+        path = self.directory / f"{key}.json"
+        if not path.is_file():
+            self.misses += 1
+            return None
+        self.hits += 1
+        data = json.loads(path.read_text(encoding="utf-8"))
+        completion = Completion(
+            text=data["text"],
+            usage=Usage(data["input_tokens"], data["output_tokens"]),
+            model=data["model"],
+        )
+        return completion, float(data["latency_s"])
+
+    def put(self, key: str, completion: Completion, latency_s: float) -> None:
+        self.directory.mkdir(parents=True, exist_ok=True)
+        record = {
+            "text": completion.text,
+            "input_tokens": completion.usage.input_tokens,
+            "output_tokens": completion.usage.output_tokens,
+            "model": completion.model,
+            "latency_s": latency_s,
+        }
+        (self.directory / f"{key}.json").write_text(json.dumps(record), "utf-8")
+
+
+_completion_cache: ContextVar[CompletionCache | None] = ContextVar(
+    "completion_cache", default=None
+)
+
+
+@contextmanager
+def use_completion_cache(cache: CompletionCache) -> Iterator[CompletionCache]:
+    token = _completion_cache.set(cache)
+    try:
+        yield cache
+    finally:
+        _completion_cache.reset(token)
 
 
 # --- Provider clients -------------------------------------------------------
@@ -366,10 +458,11 @@ async def _call_provider[T: BaseModel](
     temperature: float,
     image_detail: ImageDetail,
 ) -> LLMResult[T]:
-    started = time.perf_counter()
     model = client.model_for(vision=bool(images))
-    attempts = transient_failures = invalid_outputs = 0
+    attempts = transient_failures = invalid_outputs = cached_replies = 0
     usage = Usage()
+    model_latency = 0.0
+    cache = _completion_cache.get()
 
     def record(ok: bool, error: str | None = None) -> LLMCall:
         call = LLMCall(
@@ -380,25 +473,53 @@ async def _call_provider[T: BaseModel](
             attempts=attempts,
             invalid_outputs=invalid_outputs,
             usage=usage,
-            latency_s=time.perf_counter() - started,
+            latency_s=model_latency,
             error=error,
+            cached=attempts > 0 and cached_replies == attempts,
         )
         _log_call(call)
         return call
 
     while True:
         attempts += 1
+        cache_key = (
+            cache.key(
+                provider=client.provider,
+                model=model,
+                schema=schema,
+                prompt=prompt,
+                images=images,
+                max_output_tokens=max_output_tokens,
+                temperature=temperature,
+                image_detail=image_detail,
+                reply_index=invalid_outputs,
+            )
+            if cache
+            else None
+        )
+        hit = cache.get(cache_key) if cache and cache_key else None
+        attempt_started = time.perf_counter()
         try:
-            async with asyncio.timeout(settings.llm_timeout_s):
-                completion = await client.complete(
-                    schema=schema,
-                    prompt=prompt,
-                    images=images,
-                    max_output_tokens=max_output_tokens,
-                    temperature=temperature,
-                    image_detail=image_detail,
-                )
+            if hit:
+                completion, recorded_latency = hit
+                cached_replies += 1
+                model_latency += recorded_latency
+            else:
+                async with asyncio.timeout(settings.llm_timeout_s):
+                    completion = await client.complete(
+                        schema=schema,
+                        prompt=prompt,
+                        images=images,
+                        max_output_tokens=max_output_tokens,
+                        temperature=temperature,
+                        image_detail=image_detail,
+                    )
+                elapsed = time.perf_counter() - attempt_started
+                model_latency += elapsed
+                if cache and cache_key:
+                    cache.put(cache_key, completion, elapsed)
         except Exception as exc:
+            model_latency += time.perf_counter() - attempt_started
             failure = classify_failure(exc)
             if failure is None:
                 record(ok=False, error=type(exc).__name__)

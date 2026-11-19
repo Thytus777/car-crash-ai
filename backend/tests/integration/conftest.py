@@ -61,7 +61,13 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 @pytest.fixture(autouse=True)
 def triage(request: pytest.FixtureRequest) -> Iterator[AsyncMock]:
-    """Image triage passes by default; tests set .return_value/.side_effect."""
+    """Image triage passes by default; tests set .return_value/.side_effect.
+
+    Mark a module or test ``real_triage`` to run the real triage stage.
+    """
+    if request.node.get_closest_marker("real_triage"):
+        yield AsyncMock()
+        return
     ok = ImageTriage(shows_vehicle=True, usable=True, reason="A clear photo of a car.")
     with patch(
         "app.services.assessment.triage_images",

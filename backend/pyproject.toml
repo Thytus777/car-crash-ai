@@ -75,10 +75,11 @@ markers = [
     "integration: FastAPI app via httpx.AsyncClient with fixture LLM responses",
     "e2e: runs against a deployed environment",
     "eval: runs the model pipeline on the labelled dataset",
+    "real_triage: integration test that runs the real image-triage stage",
 ]
 
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "evals"]
 branch = true
 # SQLAlchemy's async layer runs ORM code inside greenlets.
 concurrency = ["greenlet", "thread"]

@@ -12,3 +12,6 @@ tests/
 .coverage
 coverage.xml
 htmlcov/
+# Eval harness and its scripts aren't part of the service.
+evals/
+scripts/

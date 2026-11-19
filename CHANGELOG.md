@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Eval harness: `make eval` runs the production pipeline over the labelled dataset and writes `evals/results/*.json|md`. It reports component P/R/F1 (per component and per tag), severity accuracy, triage and vehicle accuracy, cost MAE and within-range rate, schema-valid-first-attempt, retry and failure rates, p50/p95 latency and cost per request. Model replies are cached for free replays, and `make eval-compare` gates regressions ([#15](https://github.com/Thytus777/car-crash-ai/issues/15)).
 - Eval dataset format: a fixed taxonomy, a strict label schema with consistency rules, a labelling guide, a versioned manifest with a smoke subset, and `make eval-validate` (run in CI) checking hashes, image sizes, licences and smoke eligibility ([#15](https://github.com/Thytus777/car-crash-ai/issues/15)).
 - A committed OpenAPI contract (`backend/openapi.json`). CI fails if it's stale or changed without an API version bump, and tests check that both clients only call paths in the spec. The API version is now 0.2.0 ([#26](https://github.com/Thytus777/car-crash-ai/issues/26)).
 - Input validation: per-file, total and count limits (413), format detected from the file bytes (415, JPEG/PNG/WebP), and an image-triage step that rejects non-vehicle or unusable photos with a reason (422). Prompt v3 adds the triage prompt ([#27](https://github.com/Thytus777/car-crash-ai/issues/27)).

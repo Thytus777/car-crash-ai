@@ -1,0 +1,12 @@
+# USD per 1M tokens for each "<provider>/<model>" the pipeline calls.
+# Copy the numbers from the provider's official pricing page and record where
+# and when you checked. Never estimate: an unpriced model makes the eval report
+# cost per request as "unpriced" instead of inventing a figure.
+#
+# models:
+#   gemini/gemini-3.6-flash:
+#     input_usd_per_mtok: 0.00
+#     output_usd_per_mtok: 0.00   # include the thinking-token rate if different
+#     source: https://ai.google.dev/pricing
+#     checked: 2026-11-19
+models: {}

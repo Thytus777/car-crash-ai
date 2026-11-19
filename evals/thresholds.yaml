@@ -1,0 +1,21 @@
+# Eval regression gate: how far a candidate run may fall behind the baseline
+# (python -m evals compare BASE CANDIDATE). A metric missing from either run
+# is reported, not gated.
+
+# Absolute drop allowed in a 0-1 rate.
+max_drop:
+  component_f1: 0.03
+  component_recall: 0.05
+  severity_exact: 0.05
+  triage_accuracy: 0.05
+  schema_valid_first_attempt: 0.02
+
+# Absolute rise allowed in a 0-1 rate.
+max_rise:
+  call_failure_rate: 0.02
+  case_error_rate: 0.02
+
+# Relative rise allowed, in percent.
+max_increase_pct:
+  cost_per_request_usd: 10
+  latency_p95_s: 25
