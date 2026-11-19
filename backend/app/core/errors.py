@@ -50,6 +50,12 @@ class UnusableImagesError(AppError):
     title = "Images can't be assessed"
 
 
+class RedactionUnavailableError(AppError):
+    status = 503
+    slug = "redaction-unavailable"
+    title = "Image redaction unavailable"
+
+
 class NotFoundError(AppError):
     status = 404
     slug = "not-found"

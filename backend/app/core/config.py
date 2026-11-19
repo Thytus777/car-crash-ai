@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     max_images_per_request: int = 10
     min_image_width: int = 640
     min_image_height: int = 480
+    # Faces and number plates are blurred at upload (app/services/redaction.py).
+    # Production must set REDACTION_REQUIRED so a missing model refuses uploads.
+    redaction_required: bool = False
+    redaction_models_dir: Path = Path(__file__).resolve().parents[2] / "models"
+    redaction_plate_threshold: float = 0.25
+    redaction_face_threshold: float = 0.6
+    # Uploaded (redacted) photos are deleted after this; see docs/DATA_RETENTION.md.
+    upload_retention_hours: float = 24
     # Uploads are stored at up to this long edge (JPEG, STORED_IMAGE_QUALITY)...
     stored_image_max_edge: int = 1600
     stored_image_quality: int = 90

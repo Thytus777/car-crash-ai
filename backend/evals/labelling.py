@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
+from app.services.redaction import get_redactor
 from evals.dataset import DATASET_ROOT, LOCAL_IMAGES_ROOT, MAX_BYTES, MAX_EDGE_PX
 from evals.schema import CaseLabel
 
@@ -45,7 +46,16 @@ class PreparedImage:
 
 
 def detect_sensitive_regions(img: Image.Image) -> dict[str, list[Box]]:
-    """Faces and plates found by the Haar cascades (best effort)."""
+    """Faces and plates: the service's detectors if installed, else Haar."""
+    redactor = get_redactor()
+    if redactor is not None:
+        plates, faces = redactor.detect(img)
+        return {"face": faces, "plate": plates}
+    return _haar_regions(img)
+
+
+def _haar_regions(img: Image.Image) -> dict[str, list[Box]]:
+    """Fallback: OpenCV's bundled Haar cascades (weak on plates)."""
     gray = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2GRAY)
     found: dict[str, list[Box]] = {}
     for kind, files in _CASCADES.items():

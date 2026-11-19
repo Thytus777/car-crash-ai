@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.problems import problem_responses
 from app.models.damage import ImageQualityWarning
@@ -19,6 +19,9 @@ class ImageInfo(BaseModel):
     width: int
     height: int
     file_size_bytes: int
+    redacted_regions: int = Field(
+        0, description="Faces and number plates blurred before storage"
+    )
 
 
 class UploadResponse(BaseModel):
@@ -46,7 +49,7 @@ async def _read_bounded(upload: UploadFile, name: str) -> bytes:
     "/upload",
     response_model=UploadResponse,
     summary="Upload vehicle images for damage assessment",
-    responses=problem_responses(400, 413, 415, 422),
+    responses=problem_responses(400, 413, 415, 422, 503),
 )
 async def upload_images(images: list[UploadFile]) -> UploadResponse:
     check_image_count(len(images))
@@ -70,6 +73,7 @@ async def upload_images(images: list[UploadFile]) -> UploadResponse:
                 width=p.width,
                 height=p.height,
                 file_size_bytes=p.file_size_bytes,
+                redacted_regions=p.redacted_regions,
             )
             for p in processed
         ],

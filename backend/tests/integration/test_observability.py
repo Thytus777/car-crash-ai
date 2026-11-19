@@ -77,6 +77,7 @@ async def test_readyz_reports_each_check(
         "prompts": True,
         "upload_dir": True,
         "llm_provider": True,
+        "redaction": True,
         "database": True,
     }
 

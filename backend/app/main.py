@@ -1,3 +1,8 @@
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,10 +15,32 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.tracing import configure_tracing
 from app.prompts import validate_prompts
+from app.services.image_proc import purge_expired_uploads
 
 configure_logging()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    task = asyncio.create_task(_purge_uploads_periodically())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+async def _purge_uploads_periodically() -> None:
+    while True:
+        removed = await asyncio.to_thread(purge_expired_uploads)
+        if removed:
+            logging.getLogger("app.retention").info(
+                "Deleted %d expired upload(s)", removed, extra={"removed": removed}
+            )
+        await asyncio.sleep(3600)
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Car Crash AI",
     description="AI-powered vehicle damage detection and cost estimation",
     version=__version__,

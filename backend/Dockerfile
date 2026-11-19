@@ -26,9 +26,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Redaction models: pinned by sha256, fetched at build time so the service
+# never downloads at runtime. Own layer, cached until the pins change.
+COPY scripts/fetch_models.py scripts/fetch_models.py
+RUN python scripts/fetch_models.py
+
 COPY . .
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app \
+    # The image is what gets deployed: never accept unredacted uploads.
+    REDACTION_REQUIRED=true
 
 EXPOSE 8000
 

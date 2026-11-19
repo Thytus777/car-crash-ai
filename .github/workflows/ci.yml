@@ -55,6 +55,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
+      - name: Cache redaction models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: backend/models
+          key: redaction-models-${{ hashFiles('backend/scripts/fetch_models.py') }}
+      - name: Fetch redaction models (sha256-pinned)
+        run: make models
       - name: Unit tests
         run: make test
       - name: Unit + integration with coverage gate

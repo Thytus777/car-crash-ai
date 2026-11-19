@@ -53,6 +53,7 @@ Gotchas:
 - **Logging:** use `logging.getLogger(__name__)` and pass structured fields with `extra={...}`. Lines are JSON and carry the request ID automatically. Never log images, prompts, raw model output or secrets.
 - **Tracing:** wrap a new pipeline stage with `@traced("stage.<name>")` from `app/core/tracing.py`. Model calls are traced inside `llm.py`. Spans export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; `docker compose up` sends them to the collector and Jaeger at http://localhost:16686.
 - **Metrics:** define new series in `app/core/metrics.py` with low-cardinality labels only (route templates, provider, model, task, fixed outcome sets; never IDs or raw paths). SLO queries in `docs/SLO.md` depend on the existing names.
+- **Privacy:** images are redacted inside `process_upload()` before anything is stored or sent. A new code path that takes images must go through it. `docs/DATA_RETENTION.md` is the source of truth for what's stored and for how long; update it when that changes. Tests use a no-op redactor unless marked `real_redaction`; the real-model tests skip if `make models` hasn't been run.
 - **Secrets:** they come from the environment only (`backend/.env` locally, CI secrets in Actions). `.env.example` files hold the variable names.
 
 ## Testing

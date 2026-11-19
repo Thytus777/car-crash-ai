@@ -71,6 +71,10 @@ Clients should branch on `type` (stable) or `status`, and show `detail` to the u
 
 **503.** The AI provider couldn't be reached or returned a server error.
 
+## redaction-unavailable
+
+**503.** Uploads are paused because face and number-plate redaction isn't available on this server, and the server is configured never to store unredacted photos (`REDACTION_REQUIRED`).
+
 ## upstream-timeout
 
 **504.** The AI provider didn't respond within the configured deadline.
