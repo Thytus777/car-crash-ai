@@ -54,7 +54,7 @@ class ReportTotals(BaseModel):
     )
 
 
-AssessmentStage = Literal["damage_detection", "pricing", "sanity_check"]
+AssessmentStage = Literal["image_triage", "damage_detection", "pricing", "sanity_check"]
 
 
 class AssessmentIssue(BaseModel):

@@ -12,7 +12,12 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageStat
 
 from app.core.config import settings
-from app.core.errors import InvalidInputError, NotFoundError
+from app.core.errors import (
+    InvalidInputError,
+    NotFoundError,
+    PayloadTooLargeError,
+    UnsupportedMediaTypeError,
+)
 from app.models.damage import AngleGuidance, ImageQualityWarning
 
 # Quality thresholds
@@ -23,7 +28,8 @@ _OVEREXPOSED_THRESHOLD = 220.0  # Mean brightness above this → overexposed
 # Angle labels we ask users to provide (order matters for guidance message)
 EXPECTED_ANGLES = ["front", "rear", "driver side", "passenger side"]
 
-ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/heic", "image/heif"}
+# Decided from the file bytes, never the client-supplied Content-Type.
+ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 TARGET_SIZE = (1024, 1024)
 
 
@@ -63,13 +69,34 @@ class ProcessedImage:
         self.file_size_bytes = file_size_bytes
 
 
-def _validate_image(data: bytes, filename: str) -> Image.Image:
-    file_size_mb = len(data) / (1024 * 1024)
-    if file_size_mb > settings.max_upload_size_mb:
-        raise ImageValidationError(
-            f"{filename}: file size {file_size_mb:.1f}MB exceeds "
-            f"limit of {settings.max_upload_size_mb}MB"
+_MB = 1024 * 1024
+
+
+def check_image_count(count: int) -> None:
+    if count > settings.max_images_per_request:
+        raise PayloadTooLargeError(
+            f"Too many images: {count}, max is {settings.max_images_per_request}"
         )
+
+
+def check_file_size(filename: str, size: int) -> None:
+    if size > settings.max_upload_size_mb * _MB:
+        raise PayloadTooLargeError(
+            f"{filename}: {size / _MB:.1f} MB exceeds the "
+            f"{settings.max_upload_size_mb:g} MB per-file limit"
+        )
+
+
+def check_total_size(size: int) -> None:
+    if size > settings.max_upload_total_mb * _MB:
+        raise PayloadTooLargeError(
+            f"Upload total of {size / _MB:.1f} MB exceeds the "
+            f"{settings.max_upload_total_mb:g} MB limit"
+        )
+
+
+def _validate_image(data: bytes, filename: str) -> Image.Image:
+    check_file_size(filename, len(data))
 
     try:
         img = Image.open(BytesIO(data))
@@ -77,6 +104,12 @@ def _validate_image(data: bytes, filename: str) -> Image.Image:
         img = Image.open(BytesIO(data))
     except Exception as exc:
         raise ImageValidationError(f"{filename}: not a valid image file") from exc
+
+    if img.format not in ALLOWED_FORMATS:
+        raise UnsupportedMediaTypeError(
+            f"{filename}: {img.format} images aren't supported; "
+            "upload JPEG, PNG or WebP"
+        )
 
     width, height = img.size
     if width < settings.min_image_width or height < settings.min_image_height:
@@ -110,10 +143,8 @@ async def process_upload(
     Returns:
         (upload_id, list of ProcessedImage, list of ImageQualityWarning).
     """
-    if len(files) > settings.max_images_per_request:
-        raise ImageValidationError(
-            f"Too many images: {len(files)}, max is {settings.max_images_per_request}"
-        )
+    check_image_count(len(files))
+    check_total_size(sum(len(data) for _, data, _ in files))
 
     if not files:
         raise ImageValidationError("No images provided")

@@ -108,3 +108,20 @@ def test_v2_only_fixes_the_vehicle_id_braces() -> None:
     assert "{{" not in fixed and fixed == render(
         "vehicle_identification", "v1"
     ).replace("{{", "{").replace("}}", "}")
+
+
+def test_v3_only_adds_the_image_triage_prompt() -> None:
+    v2, v3 = PROMPTS_ROOT / "v2", PROMPTS_ROOT / "v3"
+    added = sorted(
+        {p.name for p in v3.glob("*.md")} - {p.name for p in v2.glob("*.md")}
+    )
+    assert added == ["image_triage.md"]
+    for p in v2.glob("*.md"):
+        assert p.read_text(encoding="utf-8") == (v3 / p.name).read_text(
+            encoding="utf-8"
+        )
+
+
+def test_rendering_a_prompt_missing_from_an_old_version_fails_clearly() -> None:
+    with pytest.raises(RuntimeError, match="image_triage.*v2"):
+        render("image_triage", "v2")

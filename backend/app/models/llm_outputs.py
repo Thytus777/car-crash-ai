@@ -53,6 +53,12 @@ class _Output(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ImageTriage(_Output):
+    shows_vehicle: bool = Field(description="At least one image shows a road vehicle")
+    usable: bool = Field(description="At least one image allows judging damage")
+    reason: str = Field(description="One sentence for the uploader")
+
+
 class VehicleIdentification(_Output):
     make: str = Field(description="Manufacturer, e.g. Toyota")
     model: str = Field(description="Model, e.g. Camry")
