@@ -1,7 +1,12 @@
+import re
 from pathlib import Path
 from typing import Literal
 
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings
+
+# Values like 'sk-your-key-here' copied from .env.example mean "not set".
+_PLACEHOLDER = re.compile(r"(sk-)?your[-_].*[-_]here", re.IGNORECASE)
 
 
 class Settings(BaseSettings):
@@ -25,10 +30,11 @@ class Settings(BaseSettings):
     llm_backoff_base_s: float = 1.0
     llm_backoff_max_s: float = 10.0
 
-    openai_api_key: str = ""
-    gemini_api_key: str = ""
-    google_ai_gemini_api_key: str = ""
-    serpapi_key: str = ""
+    # Secrets render as '**********' in repr/str/logs; read with .get_secret_value().
+    openai_api_key: SecretStr = SecretStr("")
+    gemini_api_key: SecretStr = SecretStr("")
+    google_ai_gemini_api_key: SecretStr = SecretStr("")
+    serpapi_key: SecretStr = SecretStr("")
 
     labor_rate_per_hour: float = 75.00
     pricing_concurrency: int = 4  # damaged components priced at once
@@ -47,7 +53,22 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]
 
     # PostgreSQL — asyncpg driver
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/carcrash"
+    database_url: SecretStr = SecretStr(
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/carcrash"
+    )
+
+    @field_validator(
+        "openai_api_key",
+        "gemini_api_key",
+        "google_ai_gemini_api_key",
+        "serpapi_key",
+        mode="before",
+    )
+    @classmethod
+    def _blank_placeholders(cls, value: object) -> object:
+        if isinstance(value, str) and _PLACEHOLDER.fullmatch(value.strip()):
+            return ""
+        return value
 
 
 settings = Settings()

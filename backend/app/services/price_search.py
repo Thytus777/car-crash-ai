@@ -46,7 +46,7 @@ async def search_part_prices(
 
 async def _search_web(query: str) -> list[str]:
     """Search the web using SerpAPI and return top result URLs."""
-    if not settings.serpapi_key:
+    if not settings.serpapi_key.get_secret_value():
         logger.warning("SERPAPI_KEY not set, skipping live search")
         return []
 
@@ -56,7 +56,7 @@ async def _search_web(query: str) -> list[str]:
                 "https://serpapi.com/search.json",
                 params={
                     "q": query,
-                    "api_key": settings.serpapi_key,
+                    "api_key": settings.serpapi_key.get_secret_value(),
                     "num": MAX_RESULTS,
                     "engine": "google",
                 },

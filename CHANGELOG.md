@@ -35,6 +35,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Unexpected errors no longer leak exception text in responses.
 
 ### Security
+- API keys and the database URL are `SecretStr`, so they render as `**********` in reprs, tracebacks and logs. Placeholder values from `.env.example` count as unset, instead of triggering doomed OpenAI fallbacks and SerpAPI calls ([#34](https://github.com/Thytus777/car-crash-ai/issues/34)).
 - `backend/.dockerignore` keeps `.env` files and local virtualenvs out of Docker images.
 
 ## [0.1.0]

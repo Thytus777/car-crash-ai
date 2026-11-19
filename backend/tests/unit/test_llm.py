@@ -7,7 +7,7 @@ import httpx2
 import openai
 import pytest
 from google.genai import errors as genai_errors
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 import app.core.llm as llm
 from app.core.config import settings
@@ -65,7 +65,7 @@ def providers(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ScriptedCli
         "openai": ScriptedClient("openai", []),
     }
     monkeypatch.setattr(settings, "ai_provider", "gemini")
-    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("sk-test"))
     monkeypatch.setattr(llm, "get_client", lambda p: clients[p])
     yield clients
 
@@ -171,7 +171,7 @@ async def test_no_fallback_without_a_secondary_key(
     sleeps: list[float],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr(""))
     providers["gemini"].script = [rate_limited()] * settings.llm_max_attempts
 
     with pytest.raises(LLMRateLimitError):
@@ -199,7 +199,7 @@ async def test_slow_provider_times_out_per_attempt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "llm_timeout_s", 0.01)
-    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr(""))
 
     async def hang(**_: object) -> llm.Completion:
         await asyncio.Event().wait()

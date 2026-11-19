@@ -302,8 +302,11 @@ class OpenAIClient:
 
 def _api_key(provider: Provider) -> str:
     if provider == "gemini":
-        return settings.gemini_api_key or settings.google_ai_gemini_api_key
-    return settings.openai_api_key
+        return (
+            settings.gemini_api_key.get_secret_value()
+            or settings.google_ai_gemini_api_key.get_secret_value()
+        )
+    return settings.openai_api_key.get_secret_value()
 
 
 _clients: dict[Provider, ProviderClient] = {}
