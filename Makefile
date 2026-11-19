@@ -10,7 +10,7 @@ TEST    := $(RUN) --group demo pytest
 COV_MIN ?= 84
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check \
+.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate \
         test-all coverage eval run run-demo docker pre-commit clean
 
 help: ## List targets
@@ -56,6 +56,9 @@ openapi-check: ## Fail if backend/openapi.json is stale
 
 openapi-version-check: ## Fail if the contract changed vs BASE=<spec.json> without a version bump
 	$(RUN) python scripts/openapi.py check-version $(BASE)
+
+eval-validate: ## Check dataset labels, images and the manifest
+	$(RUN) python -m evals validate
 
 eval: ## Run the eval harness (Phase 3, issue #15)
 	@echo "Eval harness not implemented yet; tracked in #15." && exit 1

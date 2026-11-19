@@ -30,6 +30,8 @@ jobs:
         run: env -u UV_FROZEN make lock-check
       - run: make lint
       - run: make format-check
+      - name: Eval dataset is valid
+        run: make eval-validate
 
   typecheck:
     name: typecheck
