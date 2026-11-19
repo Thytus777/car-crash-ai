@@ -1,0 +1,46 @@
+{
+  "started_at": "2026-11-19T08:42:11.287016+00:00",
+  "git_commit": "1c222f2",
+  "settings": {
+    "users": 20,
+    "spawn_rate": 5.0,
+    "duration": 60,
+    "latency": 1.5,
+    "jitter": 0.5
+  },
+  "machine": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.12.10",
+    "cpus": 16
+  },
+  "note": "Model calls are simulated (sleep + canned output), so this measures service overhead and concurrency under model latency, not real model performance.",
+  "stats": {
+    "/api/v1/analyze": {
+      "requests": 152,
+      "failures": 0,
+      "p50_ms": 6200.0,
+      "p95_ms": 7200.0,
+      "p99_ms": 7400.0,
+      "mean_ms": 6218.084123682562,
+      "rps": 2.5862400604768814
+    },
+    "/api/v1/upload": {
+      "requests": 20,
+      "failures": 0,
+      "p50_ms": 49.0,
+      "p95_ms": 64.0,
+      "p99_ms": 64.0,
+      "mean_ms": 51.21647500200197,
+      "rps": 0.34029474479958965
+    },
+    "Aggregated": {
+      "requests": 172,
+      "failures": 0,
+      "p50_ms": 6100.0,
+      "p95_ms": 7200.0,
+      "p99_ms": 7400.0,
+      "mean_ms": 5501.0064901150545,
+      "rps": 2.926534805276471
+    }
+  }
+}

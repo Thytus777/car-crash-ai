@@ -78,6 +78,9 @@ run: ## Start the API on :8000 with reload
 run-demo: ## Start the Streamlit demo UI on :8501
 	$(UV) run --directory $(BACKEND) --group demo streamlit run ../frontend/streamlit_app.py
 
+loadtest: ## Locust load test with simulated model latency (ARGS="--users 20 --duration 60")
+	$(UV) run --directory $(BACKEND) --group demo --group loadtest python -m loadtest.run $(ARGS)
+
 docker: ## Build the backend image
 	docker build -t car-crash-ai-backend:local $(BACKEND)
 

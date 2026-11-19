@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Load test (`make loadtest`): Locust against the real app with simulated model latency, writing p50/p95/p99 and throughput, together with the settings and machine, to `backend/loadtest/results/` ([#48](https://github.com/Thytus777/car-crash-ai/issues/48)).
 - Prometheus metrics at `/metrics`: HTTP requests and latency by route template, assessments by result, and model calls by outcome and cache status, with token and latency series. Initial SLOs with PromQL and burn-rate alerts are in `docs/SLO.md` ([#16](https://github.com/Thytus777/car-crash-ai/issues/16)).
 - OpenTelemetry tracing: one trace per request, with spans for every pipeline stage, each damage zone and each priced part. Every model call is a span carrying `gen_ai.*` model and token attributes plus attempts, re-asks, cache status, latency and prompt version. Log lines carry `trace_id`/`span_id`, and docker-compose ships a collector and Jaeger (UI on :16686) ([#16](https://github.com/Thytus777/car-crash-ai/issues/16)).
 - Observability: JSON logs (one object per line), a request ID taken from or generated for `X-Request-ID` that appears in every log line, the response header and problem bodies, a per-request access log with duration, and `/healthz` (liveness) plus `/readyz` (readiness with per-check detail). API 0.3.0; `/health` is kept as a deprecated alias ([#16](https://github.com/Thytus777/car-crash-ai/issues/16)).
