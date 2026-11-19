@@ -52,6 +52,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Security
 - Supply chain: a required `security` CI job runs pip-audit (locked runtime deps, `--strict`), bandit and gitleaks over the full history. CodeQL (security-extended) covers Python and TypeScript on PRs and weekly. Dependabot sends grouped weekly updates for uv, npm, GitHub Actions and Docker.
 - API-key auth (`API_KEYS`; `X-API-Key` or Bearer) on `/api/v1/*` and `/metrics`. Per-client token-bucket rate limits, with a tighter one for `/analyze` (429 `rate-limited` with `Retry-After`). CORS no longer combines `*` with credentials; the defaults are the local dev origins. `APP_ENV=production` refuses to start without keys, with wildcard CORS, or without required redaction. API 0.7.0 ([#9](https://github.com/Thytus777/car-crash-ai/issues/9)).
+- Untrusted input hardening ([#8](https://github.com/Thytus777/car-crash-ai/issues/8)):
+  - Prompt v4 fences scraped page text in `<page>` tags declared as untrusted, and page text can't close the fence.
+  - The vision prompts state that text in photos is never an instruction.
+  - Extracted prices outside `MIN_PART_PRICE`–`MAX_PART_PRICE`, or with a malformed currency, are discarded.
+  - Price pages are fetched only over https from public addresses: every resolved IP is checked and every redirect hop re-checked, blocking loopback, private, link-local and metadata IPs. Bodies are capped at 2 MB.
 - Faces and number plates are blurred at upload, before storage or any model call, using pretrained ONNX detectors: a YOLOv9 plate model and OpenCV YuNet for faces. Both are sha256-pinned and fetched at build time. With `REDACTION_REQUIRED` (the Docker default), uploads are refused and readiness fails if the models are missing. Redacted photos are deleted after 24 h; see `docs/DATA_RETENTION.md` and [ADR 0004](docs/adr/0004-redact-faces-and-plates-at-upload.md) ([#10](https://github.com/Thytus777/car-crash-ai/issues/10)).
 - Uploaded photos are EXIF-rotated before processing.
 - API keys and the database URL are `SecretStr`, so they render as `**********` in reprs, tracebacks and logs. Placeholder values from `.env.example` count as unset, instead of triggering doomed OpenAI fallbacks and SerpAPI calls ([#34](https://github.com/Thytus777/car-crash-ai/issues/34)).
