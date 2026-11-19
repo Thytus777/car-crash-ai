@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Load test (`make loadtest`): Locust against the real app with simulated model latency, writing p50/p95/p99 and throughput, together with the settings and machine, to `backend/loadtest/results/` ([#48](https://github.com/Thytus777/car-crash-ai/issues/48)).
 - Cost and latency budgets: model prices live in `backend/app/data/model_pricing.yaml` (shared with the evals). Every model call carries `cost_usd` on its span and in `llm_cost_usd_total`, and every response's `meta` has `cost_usd`, `latency_s` and `budget_exceeded`. Requests over `REQUEST_COST_BUDGET_USD` or `REQUEST_LATENCY_BUDGET_S` are logged and counted in `budget_exceeded_total`, not rejected. API 0.4.0.
 - Prometheus metrics at `/metrics`: HTTP requests and latency by route template, assessments by result, and model calls by outcome and cache status, with token and latency series. Initial SLOs with PromQL and burn-rate alerts are in `docs/SLO.md` ([#16](https://github.com/Thytus777/car-crash-ai/issues/16)).
 - OpenTelemetry tracing: one trace per request, with spans for every pipeline stage, each damage zone and each priced part. Every model call is a span carrying `gen_ai.*` model and token attributes plus attempts, re-asks, cache status, latency and prompt version. Log lines carry `trace_id`/`span_id`, and docker-compose ships a collector and Jaeger (UI on :16686) ([#16](https://github.com/Thytus777/car-crash-ai/issues/16)).

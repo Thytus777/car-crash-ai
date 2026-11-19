@@ -47,6 +47,9 @@ dev = [
 demo = [
     "streamlit>=1.41.0",
 ]
+loadtest = [
+    "locust>=2.47.0",
+]
 
 [tool.uv]
 default-groups = ["dev"]
