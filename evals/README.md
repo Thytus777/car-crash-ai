@@ -50,3 +50,15 @@ A metric shows `n/a`, never 0, when there is nothing to measure it on.
 Replies are cached under a key made of: provider, model, prompt version, output schema, prompt text, image hashes, generation settings, and the position in the re-ask sequence. Errors are never cached.
 - Re-running the same prompt version and model on the same images costs nothing.
 - Changing a prompt (a new prompt version), the model or an image naturally misses the cache.
+
+## Sweeping model input
+
+Image size and quality sent to the models are settings, so comparing them needs no re-labelling or re-uploading:
+
+```bash
+MODEL_IMAGE_MAX_EDGE=768  make eval ARGS=--no-cache
+MODEL_IMAGE_MAX_EDGE=1024 make eval ARGS=--no-cache
+make eval-compare BASE=evals/results/<1024>.json CANDIDATE=evals/results/<768>.json
+```
+
+Both caches key on the bytes actually sent, so each setting gets its own entries.
