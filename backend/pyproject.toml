@@ -28,7 +28,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.66b2",
     "prometheus-client>=0.26.0",
     "pyyaml>=6",
-    "opencv-python-headless>=4.10,<5",
+    "opencv-python-headless>=4.10,<6",
     "onnxruntime>=1.19",
     "open-image-models>=0.6,<0.7",
 ]
