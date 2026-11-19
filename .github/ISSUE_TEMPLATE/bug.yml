@@ -1,0 +1,34 @@
+name: Bug report
+description: Something is broken or behaves incorrectly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: Observed behaviour, including exact error text or HTTP status.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal request, input images (describe; never attach photos with plates/faces), config.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: e.g. v0.2.0 or 1b17e20
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, request ID, trace link
+      render: text
