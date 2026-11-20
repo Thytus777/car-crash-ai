@@ -44,3 +44,21 @@ def test_exceptions_are_serialised_on_one_line() -> None:
     text = JsonFormatter().format(record)
 
     assert "\n" not in text and "ValueError: boom" in json.loads(text)["exc_info"]
+
+
+def test_lines_carry_a_cloud_logging_severity() -> None:
+    # Cloud Logging grades JSON lines by `severity`; without it every line,
+    # errors included, is DEFAULT and `severity>=ERROR` finds nothing.
+    for level in (
+        logging.DEBUG,
+        logging.INFO,
+        logging.WARNING,
+        logging.ERROR,
+        logging.CRITICAL,
+    ):
+        record = _record("x")
+        record.levelno, record.levelname = level, logging.getLevelName(level)
+
+        line = json.loads(JsonFormatter().format(record))
+
+        assert line["severity"] == logging.getLevelName(level)

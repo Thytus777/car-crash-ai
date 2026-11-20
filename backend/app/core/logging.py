@@ -19,7 +19,7 @@ _STANDARD = set(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {
 
 
 class JsonFormatter(logging.Formatter):
-    """One JSON object per line: ts, level, logger, message, request_id, extras."""
+    """One JSON line: ts, level, severity, logger, message, request_id, extras."""
 
     def format(self, record: logging.LogRecord) -> str:
         line: dict[str, object] = {
@@ -28,6 +28,9 @@ class JsonFormatter(logging.Formatter):
             )[:-3]
             + "Z",
             "level": record.levelname,
+            # Cloud Logging reads the level from `severity`; Python's level
+            # names are all valid LogSeverity values.
+            "severity": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
         }

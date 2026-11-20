@@ -69,3 +69,6 @@ cache/
 # Redaction models (fetched by backend/scripts/fetch_models.py)
 backend/models/
 .audit-requirements.txt
+
+# scripts/setup_gcp.sh answers (non-secret)
+.setup-gcp.env
