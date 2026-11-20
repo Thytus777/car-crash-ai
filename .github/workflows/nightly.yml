@@ -1,0 +1,114 @@
+name: nightly
+
+# Full eval over the labelled dataset and a load test, every night and on demand.
+# Results are uploaded as artifacts and the latest eval feeds the README badge.
+# The eval step skips (and the badge says "no labelled data yet") until the
+# dataset has runnable cases and EVAL_GEMINI_API_KEY is set.
+
+on:
+  schedule:
+    - cron: "17 16 * * *" # 03:17 Melbourne (AEDT), off the top of the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  eval:
+    name: full eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      result: ${{ steps.run.outputs.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Restore model-reply cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: evals/.cache
+          key: eval-cache-nightly-${{ github.run_id }}
+          restore-keys: eval-cache-
+      - name: Run
+        id: run
+        env:
+          GEMINI_API_KEY: ${{ secrets.EVAL_GEMINI_API_KEY }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/eval-results"
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "No EVAL_GEMINI_API_KEY secret: skipping the eval." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if make eval ARGS="--output-dir $out"; then
+            echo "result=$(ls "$out"/*.json | head -1 | xargs basename)" >> "$GITHUB_OUTPUT"
+            cat "$out"/*.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Eval did not run (see log; usually no runnable cases yet)." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-full
+          path: ${{ runner.temp }}/eval-results
+          if-no-files-found: ignore
+          retention-days: 90
+
+  loadtest:
+    name: load test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      # Simulated model latency: this measures the service, not the provider.
+      - run: make loadtest ARGS="--users 20 --duration 60"
+      - name: Summary
+        run: cat backend/loadtest/results/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: loadtest
+          path: backend/loadtest/results/
+          retention-days: 90
+
+  badge:
+    name: publish eval badge
+    needs: eval
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # the badges branch only holds badge JSON
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.eval.outputs.result != ''
+        with:
+          name: eval-full
+          path: ${{ runner.temp }}/eval-results
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.eval.outputs.result }}
+        run: |
+          set -euo pipefail
+          src="none"
+          [ -n "$RESULT" ] && src="$RUNNER_TEMP/eval-results/$RESULT"
+          uv run --directory backend python scripts/badge.py eval "$src" --out "$RUNNER_TEMP/eval.json"
+          scripts/publish_badge.sh "$RUNNER_TEMP/eval.json"
