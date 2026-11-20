@@ -550,8 +550,8 @@
           },
           "severity": {
             "description": "Severity score (0.0 = no damage, 1.0 = destroyed)",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Severity",
             "type": "number"
           }
@@ -637,10 +637,10 @@
       "PriceResult": {
         "properties": {
           "confidence": {
-            "default": 0.0,
+            "default": 0,
             "description": "Extraction confidence",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Confidence",
             "type": "number"
           },
@@ -863,10 +863,10 @@
             "title": "Color"
           },
           "confidence": {
-            "default": 1.0,
+            "default": 1,
             "description": "AI confidence in identification (0.0–1.0)",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Confidence",
             "type": "number"
           },
@@ -957,7 +957,7 @@
   "info": {
     "description": "AI-powered vehicle damage detection and cost estimation",
     "title": "Car Crash AI",
-    "version": "0.7.1"
+    "version": "0.8.0"
   },
   "openapi": "3.1.0",
   "paths": {
