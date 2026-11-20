@@ -9,6 +9,7 @@ Measures the **production pipeline** (`app.services.assessment.assess`) against 
 | `dataset/` | cases (`<case_id>/label.json` + committed images) and `manifest.json` (version, smoke subset) |
 | `local_images/` | images you may not redistribute (git-ignored) |
 | `thresholds.yaml` | how far a run may regress before the eval gate fails |
+| `baselines/smoke.json` | the smoke run PRs are gated against (committed; absent until the first labelled smoke cases) |
 | `results/` | one `.json` + `.md` per run |
 | `.cache/` | cached model replies (git-ignored) |
 
@@ -44,6 +45,12 @@ Each run writes `results/<UTC time>_<prompt version>_<model>.json`, with every p
 | Cost per request | Tokens × `backend/app/data/model_pricing.yaml` (the service's own price table); "n/a" until every model used is priced |
 
 A metric shows `n/a`, never 0, when there is nothing to measure it on.
+
+## CI
+
+- **PR gate** (`.github/workflows/eval-gate.yml`, on PRs touching the app, prompts, harness or dataset): `make eval-gate` runs the smoke subset and compares it with `baselines/smoke.json` under `thresholds.yaml`. The result is posted as one PR comment, updated on each push. It fails only on a regression. With no model key (`EVAL_GEMINI_API_KEY` secret; forks never have it), no runnable smoke cases or no baseline, the comment says so and the check passes.
+- **Baseline:** never adopted automatically. To set or move it, download the `eval-smoke` artifact from the PR's run, commit it as `evals/baselines/smoke.json` in that PR, and explain the change in the PR description.
+- **Nightly** (`.github/workflows/nightly.yml`): the full eval (artifact `eval-full`, kept 90 days) and the load test (artifact `loadtest`). The latest full run sets the README's eval badge, which says "no labelled data yet" until there is one.
 
 ## Caching
 

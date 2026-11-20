@@ -1,0 +1,96 @@
+name: eval gate
+
+# On PRs that can change model behaviour: run the eval smoke subset through the
+# real pipeline, compare it with the committed baseline
+# (evals/baselines/smoke.json, gated by evals/thresholds.yaml), and post the
+# result as one PR comment that later pushes update in place.
+#
+# It fails only on a regression. With no model key (forks, or before
+# EVAL_GEMINI_API_KEY is set), no runnable smoke cases or no baseline, it says
+# so in the comment and passes, so a skip never reads as a pass.
+
+on:
+  pull_request:
+    paths:
+      - backend/app/**
+      - backend/prompts/**
+      - backend/evals/**
+      - backend/uv.lock
+      - evals/**
+      - .github/workflows/eval-gate.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  eval-smoke:
+    name: eval smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write # the result comment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      # Model replies are cached by prompt, images and model, so unchanged
+      # cases cost nothing on re-runs.
+      - name: Restore model-reply cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: evals/.cache
+          key: eval-cache-${{ github.event.pull_request.number }}-${{ github.sha }}
+          restore-keys: |
+            eval-cache-${{ github.event.pull_request.number }}-
+            eval-cache-
+
+      - name: Run the gate
+        id: gate
+        env:
+          GEMINI_API_KEY: ${{ secrets.EVAL_GEMINI_API_KEY }}
+        run: |
+          set +e
+          make eval-gate ARGS="--comment $RUNNER_TEMP/eval-comment.md --output-dir $RUNNER_TEMP/eval-results"
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/eval-comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the run
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-smoke
+          path: ${{ runner.temp }}/eval-results
+          if-no-files-found: ignore
+
+      # Fork PRs get a read-only token, so they only get the step summary.
+      - name: Post or update the PR comment
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/eval-comment.md"
+          test -s "$body" || exit 0
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("<!-- eval-gate -->"))][0].id // empty')"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$body" >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@"$body" >/dev/null
+          fi
+
+      - name: Fail on regression
+        if: steps.gate.outputs.exit != '0'
+        run: exit 1
