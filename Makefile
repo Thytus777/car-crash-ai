@@ -7,10 +7,10 @@ RUN     := $(UV) run --directory $(BACKEND)
 # Tests also cover the Streamlit demo, so they need its dependency group.
 TEST    := $(RUN) --group demo pytest
 # Floor only ever goes up (issue #14 target of 80 reached).
-COV_MIN ?= 86
+COV_MIN ?= 89
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate eval-smoke eval-compare \
+.PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate eval-smoke eval-compare eval-gate \
         test-all coverage eval run run-demo docker pre-commit clean label loadtest models audit bandit security
 
 help: ## List targets
@@ -72,6 +72,9 @@ eval-smoke: ## Run the smoke subset (the CI eval gate's cases)
 
 eval-compare: ## Compare two eval runs: make eval-compare BASE=a.json CANDIDATE=b.json
 	$(RUN) python -m evals compare $(abspath $(BASE)) $(abspath $(CANDIDATE))
+
+eval-gate: ## CI eval gate: smoke run vs evals/baselines/smoke.json (ARGS="--comment out.md")
+	$(RUN) python -m evals gate $(ARGS)
 
 run: ## Start the API on :8000 with reload
 	$(RUN) uvicorn app.main:app --reload

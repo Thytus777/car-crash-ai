@@ -16,5 +16,7 @@ htmlcov/
 # (scripts/fetch_models.py is copied explicitly by the Dockerfile).
 evals/
 scripts/openapi.py
+scripts/badge.py
+scripts/smoke.py
 models/
 loadtest/

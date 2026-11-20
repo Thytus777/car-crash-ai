@@ -203,3 +203,92 @@ async def test_runs_bypass_the_result_cache(
 
     assert fake_model.requests == 2 * calls_first  # second run called the model again
     assert settings.result_cache_enabled is True  # restored afterwards
+
+
+# --- CI eval gate (python -m evals gate) ----------------------------------
+
+
+@pytest.fixture
+def gate_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    monkeypatch.setattr("evals.__main__.CACHE_ROOT", tmp_path / "cache")
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("test-key"))
+    return {
+        "baseline": tmp_path / "baseline.json",
+        "comment": tmp_path / "comment.md",
+        "out": tmp_path / "results",
+    }
+
+
+def _gate(paths: dict[str, Path]) -> int:
+    return cli(
+        [
+            "gate",
+            "--baseline",
+            str(paths["baseline"]),
+            "--comment",
+            str(paths["comment"]),
+            "--output-dir",
+            str(paths["out"]),
+        ]
+    )
+
+
+def test_gate_skips_without_a_model_key(
+    synthetic_dataset: Path,
+    fake_model: SchemaClient,
+    gate_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr(""))
+
+    assert _gate(gate_paths) == 0
+
+    comment = gate_paths["comment"].read_text("utf-8")
+    assert "<!-- eval-gate -->" in comment and "Skipped" in comment
+    assert "no model API key" in comment and "EVAL_GEMINI_API_KEY" in comment
+    assert fake_model.requests == 0
+
+
+def test_gate_skips_without_runnable_smoke_cases(
+    synthetic_dataset: Path, fake_model: SchemaClient, gate_paths: dict[str, Path]
+) -> None:
+    (synthetic_dataset / "manifest.json").write_text(
+        json.dumps({"version": "0.1.0", "smoke": []})
+    )
+
+    assert _gate(gate_paths) == 0
+
+    comment = gate_paths["comment"].read_text("utf-8")
+    assert "Skipped" in comment and "no runnable smoke cases" in comment
+    assert fake_model.requests == 0
+
+
+def test_gate_without_a_baseline_reports_the_run_and_passes(
+    synthetic_dataset: Path, fake_model: SchemaClient, gate_paths: dict[str, Path]
+) -> None:
+    assert _gate(gate_paths) == 0
+
+    comment = gate_paths["comment"].read_text("utf-8")
+    assert "No baseline" in comment and "| Component F1 |" in comment
+    assert not gate_paths["baseline"].exists()  # never adopted silently
+
+
+def test_gate_passes_against_an_equal_baseline_and_fails_on_regression(
+    synthetic_dataset: Path, fake_model: SchemaClient, gate_paths: dict[str, Path]
+) -> None:
+    assert _gate(gate_paths) == 0
+    (first,) = gate_paths["out"].glob("*.json")
+    run = results.load_run(first)
+    gate_paths["baseline"].write_text(run.model_dump_json())
+    first.unlink()
+
+    assert _gate(gate_paths) == 0
+    assert "Passed" in gate_paths["comment"].read_text("utf-8")
+
+    better = run.model_copy(deep=True)
+    better.metrics.detection.overall.f1 = 1.0
+    gate_paths["baseline"].write_text(better.model_dump_json())
+
+    assert _gate(gate_paths) == 1
+    comment = gate_paths["comment"].read_text("utf-8")
+    assert "Regressed" in comment and "Component F1" in comment

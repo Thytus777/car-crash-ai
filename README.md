@@ -1,6 +1,8 @@
 # Car Crash AI
 
 [![CI](https://github.com/Thytus777/car-crash-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Thytus777/car-crash-ai/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Thytus777/car-crash-ai/badges/coverage.json)](https://github.com/Thytus777/car-crash-ai/actions/workflows/ci.yml?query=branch%3Amain)
+[![eval](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Thytus777/car-crash-ai/badges/eval.json)](https://github.com/Thytus777/car-crash-ai/actions/workflows/nightly.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 AI-powered vehicle damage detection and repair cost estimation. Upload photos of a damaged vehicle and get:
