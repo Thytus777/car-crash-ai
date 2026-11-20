@@ -42,7 +42,6 @@ All LLM traffic goes through `app/core/llm.py`.
 Gotchas:
 - Dependencies change only through `uv add` / `uv lock` in `backend/`. CI fails if `uv.lock` disagrees with `pyproject.toml`.
 - On Windows, `make` comes from `winget install ezwinports.make`.
-- `tests/integration/test_analysis.py::test_analyze_with_vehicle_override` is a strict xfail tied to #1. Remove the marker in the PR that fixes #1.
 
 ## Conventions
 
@@ -82,6 +81,10 @@ Ask the maintainer before:
 - adding any paid service or changing the model provider
 - force-pushing or rewriting history on `main`
 - changing the API contract (needs a `BREAKING CHANGE:` footer and a version bump)
+
+## Numbers in docs
+
+Every figure in `README.md` ("Measured") and in release notes must come from a command listed next to it, run on the current code. Update the figure and its source together, and never round in a flattering direction. Model-quality claims need an eval run on the labelled dataset; until one exists, say "not measured".
 
 ## Releases and deploys
 
