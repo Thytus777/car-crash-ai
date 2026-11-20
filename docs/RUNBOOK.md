@@ -27,7 +27,7 @@ Every deploy:
 1. records the revision serving now
 2. runs `alembic upgrade head`
 3. deploys the new revision and routes 100% of traffic to it
-4. runs `backend/scripts/smoke.py` (healthz, readyz, auth rejection, an authenticated upload with redaction)
+4. runs `backend/scripts/smoke.py` (health, readyz, auth rejection, an authenticated upload with redaction)
 5. **if the smoke test fails, routes traffic back to the recorded revision automatically**
 
 ## Rollback
@@ -67,7 +67,7 @@ Start broad, then narrow down by request.
 
 1. **Is it up?**
    ```bash
-   curl -s https://<service-url>/healthz      # process alive
+   curl -s https://<service-url>/health       # process alive (Cloud Run reserves /healthz: it returns Google's own 404)
    curl -s https://<service-url>/readyz | jq  # per-check detail: database, redaction models, providers
    ```
    `readyz` names every check. A failed required check (prompts, upload dir, model provider, redaction) makes it `not_ready` with a 503. A failed database check makes it `degraded` with a 200: assessments still work, but estimates aren't saved.
