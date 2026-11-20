@@ -17,12 +17,18 @@ jobs:
     permissions:
       contents: write # tags and releases
       pull-requests: write # the release PR
+    env:
+      HAS_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     steps:
+      # Actions may not open PRs with GITHUB_TOKEN here, and PRs it opens don't
+      # trigger CI, so the release PR needs a fine-grained PAT (contents + pull
+      # requests: write on this repo; scripts/setup_gcp.sh stage 11).
+      - name: Release token missing
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::RELEASE_PLEASE_TOKEN isn't set; skipping release-please (see scripts/setup_gcp.sh)."
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: env.HAS_TOKEN == 'true'
         with:
-          # PRs opened with GITHUB_TOKEN don't trigger CI, so the release PR
-          # could never satisfy the required checks. A fine-grained PAT
-          # (contents + pull requests: write on this repo) fixes that.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
