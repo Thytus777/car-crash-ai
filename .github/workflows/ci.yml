@@ -198,4 +198,4 @@ jobs:
           COVERAGE: ${{ needs.test.outputs.coverage }}
         run: |
           uv run --directory backend python scripts/badge.py coverage "$COVERAGE" --out "$RUNNER_TEMP/coverage.json"
-          scripts/publish_badge.sh "$RUNNER_TEMP/coverage.json"
+          bash scripts/publish_badge.sh "$RUNNER_TEMP/coverage.json"
