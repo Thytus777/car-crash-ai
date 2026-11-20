@@ -146,7 +146,9 @@ def _gate(args: argparse.Namespace) -> int:
 
     if not any(_api_key(p) for p in ("gemini", "openai")):
         comment(
-            "Skipped", "There is no model API key in this workflow, e.g. on a fork."
+            "Skipped",
+            "There's no model API key: the `EVAL_GEMINI_API_KEY` secret isn't "
+            "set, or this PR comes from a fork.",
         )
         return 0
     report = dataset.validate()

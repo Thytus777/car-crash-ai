@@ -245,7 +245,7 @@ def test_gate_skips_without_a_model_key(
 
     comment = gate_paths["comment"].read_text("utf-8")
     assert "<!-- eval-gate -->" in comment and "Skipped" in comment
-    assert "no model API key" in comment
+    assert "no model API key" in comment and "EVAL_GEMINI_API_KEY" in comment
     assert fake_model.requests == 0
 
 
