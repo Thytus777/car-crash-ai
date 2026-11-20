@@ -957,7 +957,7 @@
   "info": {
     "description": "AI-powered vehicle damage detection and cost estimation",
     "title": "Car Crash AI",
-    "version": "0.7.0"
+    "version": "0.7.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1392,7 +1392,6 @@
     },
     "/health": {
       "get": {
-        "deprecated": true,
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -1410,7 +1409,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Alias of /healthz",
+        "summary": "Liveness: the process is up (use this on Cloud Run)",
         "tags": [
           "health"
         ]

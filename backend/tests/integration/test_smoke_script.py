@@ -54,3 +54,25 @@ def test_smoke_fails_when_the_service_is_not_ready(
 
     assert smoke.run(http, None) is False
     assert "FAIL  readyz" in capsys.readouterr().out
+
+
+class _CloudRunFrontEnd:
+    """Cloud Run's front end answers /healthz itself with a 404 page."""
+
+    def __init__(self, client: TestClient) -> None:
+        self._client = client
+
+    def get(self, path: str, **kwargs: object) -> object:
+        if path == "/healthz":
+            return type("Response", (), {"status_code": 404, "text": "Not Found"})()
+        return self._client.get(path, **kwargs)  # type: ignore[arg-type]
+
+    def post(self, path: str, **kwargs: object) -> object:
+        return self._client.post(path, **kwargs)  # type: ignore[arg-type]
+
+
+def test_smoke_passes_behind_cloud_run_which_reserves_healthz(
+    http: TestClient, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert smoke.run(_CloudRunFrontEnd(http), None) is True
+    assert "FAIL" not in capsys.readouterr().out

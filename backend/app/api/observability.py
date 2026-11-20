@@ -110,7 +110,9 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/health", summary="Alias of /healthz", deprecated=True)
+# Cloud Run reserves /healthz (its front end answers it), so deployed probes
+# and the smoke test use /health. Both stay: /healthz is the local convention.
+@router.get("/health", summary="Liveness: the process is up (use this on Cloud Run)")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 

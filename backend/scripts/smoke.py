@@ -27,8 +27,10 @@ def _photo() -> bytes:
 def checks(client: Any, api_key: str | None) -> list[Check]:
     auth = {"X-API-Key": api_key} if api_key else {}
 
-    def healthz() -> str | None:
-        r = client.get("/healthz")
+    def liveness() -> str | None:
+        # /health, not /healthz: Cloud Run's front end reserves /healthz and
+        # answers it with its own 404 before the request reaches the app.
+        r = client.get("/health")
         return None if r.status_code == 200 else f"status {r.status_code}"
 
     def readyz() -> str | None:
@@ -57,7 +59,7 @@ def checks(client: Any, api_key: str | None) -> list[Check]:
         image = r.json()["images"][0]
         return None if "redacted_regions" in image else "no redaction field"
 
-    found: list[Check] = [("healthz", healthz), ("readyz", readyz)]
+    found: list[Check] = [("health", liveness), ("readyz", readyz)]
     if api_key:
         found += [
             ("auth rejects missing key", rejects_missing_key),
