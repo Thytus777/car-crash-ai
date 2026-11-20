@@ -1,0 +1,148 @@
+name: deploy
+
+# Reusable: deploy one exact image digest to one environment on Cloud Run,
+# run migrations, then smoke-test it. Called by release.yml for staging,
+# production promotion and rollback, so all three share one code path.
+#
+# Repository variables (set by scripts/setup_gcp.sh):
+#   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_DEPLOY_SA, GCP_RUNTIME_SA,
+#   GCP_AR_REPO
+# Environment variables (per GitHub Environment): CLOUD_RUN_SERVICE, CORS_ORIGINS
+# Secret Manager (per environment): <env>-api-keys, <env>-database-url;
+#   shared: gemini-api-key
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      digest:
+        type: string
+        required: true
+        description: sha256:... digest of ghcr.io/<owner>/car-crash-ai/backend
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write # keyless auth to Google Cloud (Workload Identity Federation)
+      packages: read # read the image from GHCR
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      DIGEST: ${{ inputs.digest }}
+      REGION: ${{ vars.GCP_REGION }}
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+    steps:
+      # Inputs can come from a manual dispatch, so they reach scripts only as
+      # validated environment variables, never as interpolated text.
+      - name: Validate inputs
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::digest must be sha256:<64 hex>"; exit 1; }
+          [[ "$ENVIRONMENT" =~ ^(staging|production)$ ]] || { echo "::error::unknown environment"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Authenticate to Google Cloud (OIDC, no stored keys)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Copy the exact digest from GHCR to Artifact Registry
+        id: image
+        run: |
+          set -euo pipefail
+          src="ghcr.io/${GITHUB_REPOSITORY,,}/backend@${DIGEST}"
+          dst="${REGION}-docker.pkg.dev/${PROJECT}/${{ vars.GCP_AR_REPO }}/backend"
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          # A moving tag per environment shows what each one runs; deploys use the digest.
+          docker buildx imagetools create --tag "${dst}:${ENVIRONMENT}" "$src"
+          # Same manifest, same digest: what was scanned is what runs.
+          echo "ref=${dst}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          # Expand-only migrations: the previous revision must keep working on the
+          # new schema, so a rollback never needs a downgrade (docs/RUNBOOK.md).
+          export DATABASE_URL="$(gcloud secrets versions access latest --secret="${ENVIRONMENT}-database-url")"
+          echo "::add-mask::$DATABASE_URL"
+          uv run --frozen --no-dev alembic upgrade head
+
+      - name: Record the revision serving now
+        id: previous
+        run: |
+          rev="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)"
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3
+        with:
+          service: ${{ vars.CLOUD_RUN_SERVICE }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ steps.image.outputs.ref }}
+          env_vars: |-
+            APP_ENV=production
+            CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
+          secrets: |-
+            GEMINI_API_KEY=gemini-api-key:latest
+            API_KEYS=${{ inputs.environment }}-api-keys:latest
+            DATABASE_URL=${{ inputs.environment }}-database-url:latest
+          flags: >-
+            --service-account=${{ vars.GCP_RUNTIME_SA }}
+            --allow-unauthenticated
+            --min-instances=0
+            --max-instances=2
+            --cpu=1
+            --memory=1Gi
+            --timeout=180
+            --concurrency=20
+
+      # A manual rollback pins traffic to one revision; a fresh deploy takes it back.
+      - name: Route all traffic to the new revision
+        run: gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-latest --quiet
+
+      - name: Smoke test
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          key="$(gcloud secrets versions access latest --secret="${ENVIRONMENT}-api-keys" | cut -d, -f1)"
+          echo "::add-mask::$key"
+          SMOKE_API_KEY="$key" uv run --frozen --no-dev python scripts/smoke.py \
+            --base-url "${{ steps.deploy.outputs.url }}"
+
+      - name: Roll back automatically if the smoke test failed
+        if: failure() && steps.previous.outputs.revision != ''
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-revisions="${PREVIOUS}=100" --quiet
+          echo "### Smoke test failed: traffic returned to \`${PREVIOUS}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed to ${ENVIRONMENT}"
+            echo "- Image: \`${{ steps.image.outputs.ref }}\`"
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- Rollback: run the \`release\` workflow manually with this environment and an earlier digest (docs/RUNBOOK.md)"
+          } >> "$GITHUB_STEP_SUMMARY"
