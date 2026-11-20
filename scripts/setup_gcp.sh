@@ -359,6 +359,18 @@ step "Create API key → copy it."
 ask_secret GEMINI_KEY "Paste the Gemini API key:"
 if [[ -n "$GEMINI_KEY" ]]; then put_secret gemini-api-key "$GEMINI_KEY"; else SKIPPED+=("gemini-api-key secret"); fi
 unset GEMINI_KEY
+say ""
+say "The PR eval gate and the nightly eval need their own key (GitHub secret"
+say "EVAL_GEMINI_API_KEY), so eval spend can be capped separately. Each gated PR"
+say "runs only the smoke cases, and cached replies make re-runs free."
+if confirm "Create a separate eval key and store it in GitHub now?"; then
+  step "In AI Studio: Create API key again → copy it."
+  ask_secret EVAL_KEY "Paste the eval Gemini API key:"
+  if [[ -n "$EVAL_KEY" ]]; then set_secret EVAL_GEMINI_API_KEY "$EVAL_KEY"; fi
+  unset EVAL_KEY
+else
+  SKIPPED+=("EVAL_GEMINI_API_KEY GitHub secret (the eval gate skips without it)")
+fi
 pause
 
 # ── 8 ─────────────────────────────────────────────────────────────────────

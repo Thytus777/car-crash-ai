@@ -111,4 +111,4 @@ jobs:
           src="none"
           [ -n "$RESULT" ] && src="$RUNNER_TEMP/eval-results/$RESULT"
           uv run --directory backend python scripts/badge.py eval "$src" --out "$RUNNER_TEMP/eval.json"
-          scripts/publish_badge.sh "$RUNNER_TEMP/eval.json"
+          bash scripts/publish_badge.sh "$RUNNER_TEMP/eval.json"
