@@ -7,7 +7,7 @@ RUN     := $(UV) run --directory $(BACKEND)
 # Tests also cover the Streamlit demo, so they need its dependency group.
 TEST    := $(RUN) --group demo pytest
 # Floor only ever goes up (issue #14 target of 80 reached).
-COV_MIN ?= 86
+COV_MIN ?= 89
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lock-check lint format format-check typecheck test test-integration openapi openapi-check openapi-version-check eval-validate eval-smoke eval-compare eval-gate \
