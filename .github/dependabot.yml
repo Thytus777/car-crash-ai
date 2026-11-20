@@ -25,8 +25,14 @@ updates:
       interval: weekly
       day: monday
     groups:
+      # Majors arrive one per PR so each migration is reviewed on its own.
       web:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # @types/node follows the Node major in .nvmrc, not the latest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: build
       include: scope
