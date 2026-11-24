@@ -378,18 +378,17 @@ Template at `backend/app/templates/report.html` includes:
 
 | Package | Version | Purpose |
 |---|---|---|
-| **Next.js** | 15.1.0 | React framework (App Router) |
-| **React** | 19.0.0 | UI library |
+| **Next.js** | 16.4 | React framework (App Router), standalone server |
+| **React** | 19 | UI library |
 | **TypeScript** | 5+ | Type safety |
-| **Tailwind CSS** | 3.4+ | Utility-first styling |
-| **clsx** | 2.1+ | Conditional class merging |
+| Plain CSS | | One stylesheet, `app/globals.css`: the "incident report" look (paper, system serif/sans/mono, tape and a stamped total) |
 
 ### Key pages and components
 
 | File | Purpose |
 |------|---------|
-| `app/page.tsx` | Main upload + analysis flow (stage machine: upload → options → analyzing → result → error) |
-| `app/history/page.tsx` | Estimate history table with PDF links |
+| `app/page.tsx` | The report form: photos, optional vehicle details, then the result (form → analyzing → result) |
+| `app/history/page.tsx` | "Your reports": estimates this browser created, with PDF downloads |
 | `components/UploadZone.tsx` | Drag-and-drop image upload (JPEG/PNG/HEIC filter) |
 | `components/DamageReport.tsx` | Results display — severity bars, cost table, PDF download |
 | `lib/api.ts` | Typed API client for all backend calls |
