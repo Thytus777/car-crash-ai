@@ -21,6 +21,11 @@ on:
         type: string
         required: true
         description: sha256:... digest of ghcr.io/<owner>/car-crash-ai/backend
+      web_digest:
+        type: string
+        required: false
+        default: ""
+        description: sha256:... digest of ghcr.io/<owner>/car-crash-ai/web; empty skips the web app
 
 permissions:
   contents: read
@@ -32,7 +37,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: ${{ inputs.environment }}
-      url: ${{ steps.deploy.outputs.url }}
+      url: ${{ steps.web_deploy.outputs.url || steps.deploy.outputs.url }}
     permissions:
       contents: read
       id-token: write # keyless auth to Google Cloud (Workload Identity Federation)
@@ -40,15 +45,19 @@ jobs:
     env:
       ENVIRONMENT: ${{ inputs.environment }}
       DIGEST: ${{ inputs.digest }}
+      WEB_DIGEST: ${{ inputs.web_digest }}
       REGION: ${{ vars.GCP_REGION }}
       PROJECT: ${{ vars.GCP_PROJECT_ID }}
       SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      # The web app's service sits beside the API's: car-crash-ai-staging-web.
+      WEB_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}-web
     steps:
       # Inputs can come from a manual dispatch, so they reach scripts only as
       # validated environment variables, never as interpolated text.
       - name: Validate inputs
         run: |
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::digest must be sha256:<64 hex>"; exit 1; }
+          [[ -z "$WEB_DIGEST" || "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::web_digest must be empty or sha256:<64 hex>"; exit 1; }
           [[ "$ENVIRONMENT" =~ ^(staging|production)$ ]] || { echo "::error::unknown environment"; exit 1; }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +131,7 @@ jobs:
         run: gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-latest --quiet
 
       - name: Smoke test
+        id: smoke
         working-directory: backend
         run: |
           set -euo pipefail
@@ -131,18 +141,96 @@ jobs:
             --base-url "${{ steps.deploy.outputs.url }}"
 
       - name: Roll back automatically if the smoke test failed
-        if: failure() && steps.previous.outputs.revision != ''
+        if: failure() && steps.smoke.outcome == 'failure' && steps.previous.outputs.revision != ''
         env:
           PREVIOUS: ${{ steps.previous.outputs.revision }}
         run: |
           gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-revisions="${PREVIOUS}=100" --quiet
           echo "### Smoke test failed: traffic returned to \`${PREVIOUS}\`" >> "$GITHUB_STEP_SUMMARY"
 
+      # --- The web app, only once the API it calls has passed its smoke test ---
+
+      - name: Copy the web image to Artifact Registry
+        id: web_image
+        if: env.WEB_DIGEST != ''
+        run: |
+          set -euo pipefail
+          src="ghcr.io/${GITHUB_REPOSITORY,,}/web@${WEB_DIGEST}"
+          dst="${REGION}-docker.pkg.dev/${PROJECT}/${{ vars.GCP_AR_REPO }}/web"
+          docker buildx imagetools create --tag "${dst}:${ENVIRONMENT}" "$src"
+          echo "ref=${dst}@${WEB_DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Record the web revision serving now
+        id: web_previous
+        if: env.WEB_DIGEST != ''
+        run: |
+          rev="$(gcloud run services describe "$WEB_SERVICE" --region "$REGION" --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)"
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the web app to Cloud Run
+        id: web_deploy
+        if: env.WEB_DIGEST != ''
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3
+        with:
+          service: ${{ env.WEB_SERVICE }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ steps.web_image.outputs.ref }}
+          # The browser calls the web app's own /api/v1 proxy, which adds the
+          # key server-side; the key never reaches the browser.
+          env_vars: |-
+            API_URL=${{ steps.deploy.outputs.url }}
+          secrets: |-
+            API_KEYS=${{ inputs.environment }}-api-keys:latest
+          flags: >-
+            --service-account=${{ vars.GCP_RUNTIME_SA }}
+            --allow-unauthenticated
+            --port=8080
+            --min-instances=0
+            --max-instances=2
+            --cpu=1
+            --memory=512Mi
+            --timeout=180
+            --concurrency=40
+
+      - name: Route all web traffic to the new revision
+        if: env.WEB_DIGEST != ''
+        run: gcloud run services update-traffic "$WEB_SERVICE" --region "$REGION" --to-latest --quiet
+
+      - name: Web smoke test
+        id: web_smoke
+        if: env.WEB_DIGEST != ''
+        env:
+          URL: ${{ steps.web_deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          check() { # name, expected status, path
+            got="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$URL$3")"
+            if [ "$got" = "$2" ]; then echo "PASS  $1"; else echo "FAIL  $1 (expected $2, got $got)"; return 1; fi
+          }
+          ok=0
+          check "page loads" 200 / || ok=1
+          check "proxy reaches the API (your reports)" 200 /api/v1/mine || ok=1
+          check "proxy hides the list of all estimates" 404 /api/v1/estimates || ok=1
+          check "proxy hides other people's estimates" 404 /api/v1/estimates/1 || ok=1
+          exit $ok
+
+      - name: Roll back the web app if its smoke test failed
+        if: failure() && steps.web_smoke.outcome == 'failure' && steps.web_previous.outputs.revision != ''
+        env:
+          PREVIOUS: ${{ steps.web_previous.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "$WEB_SERVICE" --region "$REGION" --to-revisions="${PREVIOUS}=100" --quiet
+          echo "### Web smoke test failed: traffic returned to \`${PREVIOUS}\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Summary
         run: |
           {
             echo "### Deployed to ${ENVIRONMENT}"
             echo "- Image: \`${{ steps.image.outputs.ref }}\`"
-            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- API URL: ${{ steps.deploy.outputs.url }}"
+            if [ -n "$WEB_DIGEST" ]; then
+              echo "- Web image: \`${{ steps.web_image.outputs.ref }}\`"
+              echo "- **Web app: ${{ steps.web_deploy.outputs.url }}**"
+            fi
             echo "- Rollback: run the \`release\` workflow manually with this environment and an earlier digest (docs/RUNBOOK.md)"
           } >> "$GITHUB_STEP_SUMMARY"

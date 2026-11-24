@@ -1,0 +1,9 @@
+# Keep secrets, local builds and dependencies out of the build context.
+.env
+.env.*
+!.env.local.example
+node_modules/
+.next/
+tsconfig.tsbuildinfo
+Dockerfile
+.dockerignore

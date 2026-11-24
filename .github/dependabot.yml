@@ -63,3 +63,17 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: build
+  - package-ecosystem: docker
+    directory: /frontend-next
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      base-images:
+        patterns: ["*"]
+    ignore:
+      # Node majors move with .nvmrc, deliberately.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: build
