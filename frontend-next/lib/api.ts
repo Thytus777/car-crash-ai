@@ -1,13 +1,6 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-// NOTE: a key shipped in browser code is visible to anyone who opens the site.
-// It only deters casual abuse of the API; a public deployment should route
-// calls through a server-side proxy that adds the key instead.
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
-
-function withKey(headers: Record<string, string> = {}): Record<string, string> {
-  return API_KEY ? { ...headers, "X-API-Key": API_KEY } : headers;
-}
+// Same-origin calls to this app's proxy (app/api/v1/[...path]/route.ts),
+// which adds the API key on the server. No key ever reaches the browser.
+const BASE = "/api/v1";
 
 export interface UploadResponse {
   upload_id: string;
@@ -62,10 +55,9 @@ export interface AssessmentReport {
 export async function uploadImages(files: File[]): Promise<UploadResponse> {
   const form = new FormData();
   files.forEach((f) => form.append("images", f));
-  const res = await fetch(`${BASE}/api/v1/upload`, {
+  const res = await fetch(`${BASE}/upload`, {
     method: "POST",
     body: form,
-    headers: withKey(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -78,9 +70,9 @@ export async function analyzeUpload(
   uploadId: string,
   opts?: { make?: string; model?: string; year?: number; vin?: string; useConsensus?: boolean }
 ): Promise<AssessmentReport> {
-  const res = await fetch(`${BASE}/api/v1/analyze`, {
+  const res = await fetch(`${BASE}/analyze`, {
     method: "POST",
-    headers: withKey({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       upload_id: uploadId,
       make: opts?.make ?? null,
@@ -97,9 +89,9 @@ export async function analyzeUpload(
   return res.json();
 }
 
-/** Fetch the PDF (with the API key) and save it; plain links can't send headers. */
+/** Fetch the PDF and save it under the name the API gives it. */
 export async function downloadReport(estimateId: number): Promise<void> {
-  const res = await fetch(`${BASE}/api/v1/report/${estimateId}`, { headers: withKey() });
+  const res = await fetch(`${BASE}/report/${estimateId}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Report download failed");
@@ -114,8 +106,9 @@ export async function downloadReport(estimateId: number): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export async function listEstimates() {
-  const res = await fetch(`${BASE}/api/v1/estimates`, { headers: withKey() });
-  if (!res.ok) throw new Error("Failed to load estimates");
+/** Estimates created in this browser, newest first (the proxy tracks them). */
+export async function listMine(): Promise<AssessmentReport[]> {
+  const res = await fetch(`${BASE}/mine`);
+  if (!res.ok) throw new Error("Couldn't load your reports");
   return res.json();
 }

@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
             <h1 className="text-white font-bold text-lg tracking-tight">Car Crash AI</h1>
             <a href="/history" className="text-blue-200 hover:text-white text-sm transition-colors">
-              Estimate History
+              Your reports
             </a>
           </div>
         </header>

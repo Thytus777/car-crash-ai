@@ -11,7 +11,7 @@ Car Crash AI: crash photos go in, a vision LLM identifies damaged components, an
   - `app/prompts/`: prompt registry; the text lives in `backend/prompts/<version>/*.md`
   - `app/models/`: Pydantic schemas
   - `app/db/`: SQLAlchemy + Alembic
-- `frontend-next/`: Next.js app, the primary client.
+- `frontend-next/`: Next.js app, the primary client. The browser calls its `/api/v1` proxy, which adds the API key server-side (`API_URL`, `API_KEYS`). Never put a key in a `NEXT_PUBLIC_` variable. Proxy rules: `lib/proxy.ts`, tested with `npm test` (Node's test runner, no extra dependencies).
 - `frontend/`: Streamlit demo (`streamlit_app.py`) on top of `api_client.py`, which holds the HTTP calls with no Streamlit dependency. Tests drive `api_client` against the real app through `TestClient`, so the demo can't drift from the API.
 - `evals/`: dataset, taxonomy and results; the harness code is in `backend/evals/`.
 - `docs/adr/`: architecture decision records. Read the relevant one before reversing a decision, and add one (copy `0000-template.md`) for any decision a reviewer would ask "why?" about.

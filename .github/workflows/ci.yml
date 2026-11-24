@@ -142,6 +142,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Type check
         run: npx --no-install tsc --noEmit -p .
+      - name: Unit tests (proxy rules)
+        run: npm test
       - name: Production build
         run: npx --no-install next build
 

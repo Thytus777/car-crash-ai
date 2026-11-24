@@ -129,7 +129,7 @@ scripts/          setup_gcp.sh (guided cloud setup), badge publishing
 
 - **Accuracy is unmeasured** until the labelled dataset exists (above).
 - The cloud deploy pipeline is built and runs up to the GHCR push and attestation. The Cloud Run stages switch on when `scripts/setup_gcp.sh` has been run.
-- The Next.js client sends its API key from the browser. A public web deployment needs a server-side proxy ([`SECURITY.md`](SECURITY.md)).
+- The Next.js app keeps the API key on its server: a proxy adds it, so the browser never sees it ([`SECURITY.md`](SECURITY.md)).
 - Rate limits are per instance (in memory).
 
 ## License
