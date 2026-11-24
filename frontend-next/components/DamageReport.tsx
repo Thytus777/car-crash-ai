@@ -1,193 +1,215 @@
 "use client";
 
-import clsx from "clsx";
+import { useState } from "react";
+
 import { downloadReport, type AssessmentReport } from "@/lib/api";
 
 interface Props {
   report: AssessmentReport;
-  estimateId?: number;
   onReset: () => void;
 }
 
-function SeverityBar({ value }: { value: number }) {
-  const pct = Math.round(value * 100);
-  const color = value >= 0.6 ? "bg-red-500" : value >= 0.3 ? "bg-yellow-400" : "bg-green-400";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div className={clsx("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs text-gray-500">{pct}%</span>
-    </div>
-  );
-}
+const money = (n: string | number | null) =>
+  n === null ? "Unpriced" : `$${Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+const label = (s: string) => s.replace(/_/g, " ");
 
-function Badge({ value }: { value: string }) {
+function Severity({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
   return (
-    <span className={clsx(
-      "inline-block px-2 py-0.5 rounded-full text-xs font-semibold",
-      value === "replace" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-    )}>
-      {value.toUpperCase()}
+    <span className="severity">
+      <span className="severity__bar" aria-hidden="true">
+        <i style={{ width: `${pct}%` }} />
+      </span>
+      {value.toFixed(2)}
     </span>
   );
 }
 
-export default function DamageReport({ report, estimateId, onReset }: Props) {
+export default function DamageReport({ report, onReset }: Props) {
   const { vehicle, damage_assessment, cost_estimates, totals, assessment_warnings, issues } = report;
-  const fmt = (n: string | number | null) =>
-    n === null ? "—" : `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const [pdfError, setPdfError] = useState("");
+  const id = report.estimate_id;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <article>
+      <div className="report-head">
         <div>
-          <h2 className="text-2xl font-bold text-brand">
-            {vehicle.year} {vehicle.make} {vehicle.model}{vehicle.trim ? ` ${vehicle.trim}` : ""}
-          </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            AI confidence: {Math.round(vehicle.confidence * 100)}%
-            {vehicle.vin && <> · VIN: {vehicle.vin}</>}
-            {" · "}Method: {damage_assessment.assessment_method.replace("_", " ")}
+          <p className="report-no">{id !== null ? `Report No. ${id}` : "Report (not saved)"}</p>
+          <h1 className="vehicle">
+            {vehicle.year} {vehicle.make} {vehicle.model}
+            {vehicle.trim ? ` ${vehicle.trim}` : ""}
+          </h1>
+          <p className="meta">
+            Identified with {Math.round(vehicle.confidence * 100)}% confidence
+            {vehicle.vin ? ` · VIN ${vehicle.vin}` : ""} · {label(damage_assessment.assessment_method)}
           </p>
         </div>
-        <button onClick={onReset} className="text-sm text-brand hover:underline">
-          ← New assessment
+        <button type="button" className="button button--plain" onClick={onReset}>
+          New report
         </button>
       </div>
 
-      {/* Partial result: stages that degraded */}
       {report.status === "partial" && (
-        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Partial assessment — some steps could not complete</p>
-          <ul className="mt-1 list-disc pl-5 space-y-0.5">
+        <div className="note" role="status">
+          <p className="note__title">Partial report: some steps couldn&apos;t finish</p>
+          <ul>
             {issues.map((issue, i) => (
               <li key={i}>{issue.detail}</li>
             ))}
           </ul>
         </div>
       )}
-
-      {/* Quality warnings */}
       {damage_assessment.image_quality_warnings.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="font-semibold text-red-700 mb-1">Image Quality Issues</p>
-          {damage_assessment.image_quality_warnings.map((w, i) => (
-            <p key={i} className="text-sm text-red-600">• {w.message}</p>
-          ))}
+        <div className="note">
+          <p className="note__title">Photo quality</p>
+          <ul>
+            {damage_assessment.image_quality_warnings.map((w, i) => (
+              <li key={i}>{w.message}</li>
+            ))}
+          </ul>
         </div>
       )}
-
-      {/* Angle guidance */}
-      {damage_assessment.angle_guidance?.suggestion ? (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-          📷 {damage_assessment.angle_guidance.suggestion}
+      {damage_assessment.angle_guidance?.suggestion && (
+        <div className="note">
+          <p className="note__title">For a better estimate</p>
+          <p style={{ margin: 0 }}>{damage_assessment.angle_guidance.suggestion}</p>
         </div>
-      ) : null}
-
-      {/* Assessment warnings (sanity check) */}
+      )}
       {assessment_warnings.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="font-semibold text-yellow-800 mb-1">⚠ Assessment Flags</p>
-          {assessment_warnings.map((w, i) => (
-            <p key={i} className="text-sm text-yellow-700">• {w}</p>
-          ))}
+        <div className="note">
+          <p className="note__title">Check these</p>
+          <ul>
+            {assessment_warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Damage table */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Damage Assessment</h3>
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-brand text-white">
-              <tr>
-                {["Component", "Damage", "Severity", "Action", "Description"].map((h) => (
-                  <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {damage_assessment.damages.map((d, i) => (
-                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                  <td className="px-4 py-2 font-medium capitalize">{d.component.replace(/_/g, " ")}</td>
-                  <td className="px-4 py-2 capitalize">{d.damage_type}</td>
-                  <td className="px-4 py-2"><SeverityBar value={d.severity} /></td>
-                  <td className="px-4 py-2"><Badge value={d.recommendation} /></td>
-                  <td className="px-4 py-2 text-gray-600 max-w-xs">{d.description}</td>
+      <section className="section" aria-labelledby="damage-label">
+        <h2 className="section__label" id="damage-label">
+          <span className="section__letter">A.</span> Damage
+        </h2>
+        {damage_assessment.damages.length === 0 ? (
+          <p>No damage found in these photos.</p>
+        ) : (
+          <div className="scroll-x">
+            <table className="ledger">
+              <thead>
+                <tr>
+                  <th>Part</th>
+                  <th>Severity</th>
+                  <th>Action</th>
+                  <th>Notes</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Cost table */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Cost Breakdown</h3>
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-brand text-white">
-              <tr>
-                {["Component", "Parts (Low–High)", "Labor", "Total"].map((h) => (
-                  <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
+              </thead>
+              <tbody>
+                {damage_assessment.damages.map((d, i) => (
+                  <tr key={i}>
+                    <td className="ledger__part">
+                      {label(d.component)}
+                      <span className="ledger__small">{d.damage_type}</span>
+                    </td>
+                    <td>
+                      <Severity value={d.severity} />
+                    </td>
+                    <td>
+                      <span className={d.recommendation === "replace" ? "action action--replace" : "action"}>
+                        {d.recommendation}
+                      </span>
+                    </td>
+                    <td>{d.description}</td>
+                  </tr>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {cost_estimates.map((c, i) => (
-                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                  <td className="px-4 py-2 font-medium capitalize">
-                    {c.component.replace(/_/g, " ")}
-                    <span className="block text-xs text-gray-400">{c.pricing_method.replace(/_/g, " ")}</span>
-                  </td>
-                  <td className="px-4 py-2">
-                    {c.part_cost_avg === null ? (
-                      <span className="text-amber-700">Unpriced</span>
-                    ) : (
-                      <>
-                        {fmt(c.part_cost_low)} – {fmt(c.part_cost_high)}
-                        <span className="block text-xs text-gray-400">avg {fmt(c.part_cost_avg)}</span>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">{fmt(c.labor_cost)}</td>
-                  <td className="px-4 py-2 font-semibold">{fmt(c.total_avg)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Totals */}
-      <div className="bg-brand text-white rounded-xl p-6 flex gap-8">
-        {[
-          ["Parts Total", totals.parts_total],
-          ["Labor Total", totals.labor_total],
-          ["Grand Total", totals.grand_total],
-        ].map(([label, value]) => (
-          <div key={label}>
-            <p className="text-xs opacity-75 uppercase tracking-wide">{label}</p>
-            <p className="text-3xl font-bold mt-0.5">{fmt(value)}</p>
-          </div>
-        ))}
-        {estimateId && (
-          <div className="ml-auto self-center">
-            <button
-              type="button"
-              onClick={() => downloadReport(estimateId).catch((e: Error) => console.error(e))}
-              className="bg-white text-brand font-semibold px-4 py-2 rounded-lg text-sm hover:bg-blue-50 transition-colors"
-            >
-              Download PDF
-            </button>
+              </tbody>
+            </table>
           </div>
         )}
+      </section>
+
+      {cost_estimates.length > 0 && (
+        <section className="section" aria-labelledby="cost-label">
+          <h2 className="section__label" id="cost-label">
+            <span className="section__letter">B.</span> Costs
+          </h2>
+          <div className="scroll-x">
+            <table className="ledger">
+              <thead>
+                <tr>
+                  <th>Part</th>
+                  <th className="num">Part price</th>
+                  <th className="num">Labour</th>
+                  <th className="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cost_estimates.map((c, i) => (
+                  <tr key={i}>
+                    <td className="ledger__part">
+                      {label(c.component)}
+                      <span className="ledger__small">{label(c.pricing_method)}</span>
+                    </td>
+                    <td className="num">
+                      {c.part_cost_avg === null ? (
+                        "Unpriced"
+                      ) : (
+                        <>
+                          {money(c.part_cost_avg)}
+                          <span className="ledger__small">
+                            {money(c.part_cost_low)} to {money(c.part_cost_high)}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                    <td className="num">
+                      {money(c.labor_cost)}
+                      <span className="ledger__small">{c.labor_hours} h</span>
+                    </td>
+                    <td className="num">{money(c.total_avg)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <div className="totals">
+        <dl>
+          <dt>Parts</dt>
+          <dd>{money(totals.parts_total)}</dd>
+          <dt>Labour</dt>
+          <dd>{money(totals.labor_total)}</dd>
+          {totals.unpriced_components.length > 0 && (
+            <>
+              <dt>Unpriced</dt>
+              <dd>{totals.unpriced_components.map(label).join(", ")}</dd>
+            </>
+          )}
+        </dl>
+        <div className="stamp" role="img" aria-label={`Estimated total ${money(totals.grand_total)}`}>
+          <span className="stamp__label">Estimate</span>
+          <span className="stamp__value">{money(totals.grand_total)}</span>
+        </div>
       </div>
 
-      {/* Disclaimer */}
-      <p className="text-xs text-gray-400">{report.disclaimer}</p>
-    </div>
+      {id !== null && (
+        <div className="actions">
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              setPdfError("");
+              downloadReport(id).catch((e: Error) => setPdfError(e.message));
+            }}
+          >
+            Download PDF
+          </button>
+          {pdfError && <span role="alert">{pdfError}</span>}
+        </div>
+      )}
+
+      <p className="disclaimer">{report.disclaimer}</p>
+    </article>
   );
 }

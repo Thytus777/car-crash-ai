@@ -1,52 +1,83 @@
 "use client";
 
-import { useRef, useState } from "react";
-import clsx from "clsx";
+import { useEffect, useId, useMemo, useState } from "react";
+
+const ACCEPTED = ["image/jpeg", "image/png", "image/heic", "image/heif"];
+const MAX_FILES = 10;
 
 interface Props {
+  files: File[];
   onFiles: (files: File[]) => void;
   disabled?: boolean;
 }
 
-export default function UploadZone({ onFiles, disabled }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
+/** Browsers can't draw HEIC, so those photos show as a labelled blank. */
+function canPreview(file: File): boolean {
+  return file.type === "image/jpeg" || file.type === "image/png";
+}
 
-  function handleFiles(fileList: FileList | null) {
-    if (!fileList) return;
-    const accepted = Array.from(fileList).filter((f) =>
-      ["image/jpeg", "image/png", "image/heic", "image/heif"].includes(f.type)
-    );
-    if (accepted.length) onFiles(accepted);
+export default function UploadZone({ files, onFiles, disabled }: Props) {
+  const inputId = useId();
+  const [dragging, setDragging] = useState(false);
+  const previews = useMemo(
+    () => files.map((f) => (canPreview(f) ? URL.createObjectURL(f) : null)),
+    [files],
+  );
+  useEffect(() => () => previews.forEach((url) => url && URL.revokeObjectURL(url)), [previews]);
+
+  function accept(list: FileList | null) {
+    if (!list || disabled) return;
+    const picked = Array.from(list).filter((f) => ACCEPTED.includes(f.type)).slice(0, MAX_FILES);
+    if (picked.length) onFiles(picked);
   }
 
   return (
-    <div
-      onClick={() => !disabled && inputRef.current?.click()}
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
-      className={clsx(
-        "border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors",
-        dragging ? "border-brand bg-blue-50" : "border-gray-300 hover:border-brand hover:bg-gray-50",
-        disabled && "opacity-50 cursor-not-allowed"
-      )}
-    >
+    <div>
+      <label
+        htmlFor={inputId}
+        className="dropzone"
+        data-dragging={dragging}
+        aria-disabled={disabled}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!disabled) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          accept(e.dataTransfer.files);
+        }}
+      >
+        <p className="dropzone__main">
+          {files.length ? "Choose different photos" : "Choose photos or drop them here"}
+        </p>
+        <p className="dropzone__sub">
+          JPEG, PNG or HEIC, up to 10 photos of 20 MB each. Front, rear and both sides work best.
+        </p>
+      </label>
       <input
-        ref={inputRef}
+        id={inputId}
+        className="visually-hidden"
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/heic,image/heif"
-        className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        accept={ACCEPTED.join(",")}
         disabled={disabled}
+        onChange={(e) => accept(e.target.files)}
       />
-      <div className="text-4xl mb-3">📷</div>
-      <p className="font-semibold text-gray-700">Drop photos here or click to browse</p>
-      <p className="text-sm text-gray-400 mt-1">JPEG, PNG, HEIC · up to 20 MB each · max 10 photos</p>
-      <p className="text-xs text-gray-400 mt-2">
-        For best results: front, rear, driver side, passenger side
-      </p>
+
+      {files.length > 0 && (
+        <ul className="photos" aria-label={`${files.length} photo${files.length === 1 ? "" : "s"} selected`}>
+          {files.map((file, i) => (
+            <li className="photo" key={`${file.name}-${i}`}>
+              <div className="photo__frame">
+                {previews[i] && <img src={previews[i]} alt="" />}
+              </div>
+              <span className="photo__name">{file.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
