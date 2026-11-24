@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test lib/"
+    "test": "node --test \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "clsx": "^2.1.1",

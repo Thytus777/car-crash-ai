@@ -9,7 +9,7 @@
  *
  * Framework-free so it runs under `node --test` (lib/proxy.test.ts).
  */
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const OWNED_COOKIE = "cca_estimates";
 export const MAX_OWNED = 20;
@@ -44,7 +44,9 @@ export function route(method: string, segments: string[]): Route | null {
 /** The cookie-signing key: derived from the API key, so there's no extra secret to manage. */
 export function signingKey(apiKey: string | undefined): Buffer {
   if (!apiKey) return devKey; // local dev without auth: cookies last until restart
-  return createHash("sha256").update(`car-crash-ai web cookie:${apiKey}`).digest();
+  // HKDF: the API key is already high-entropy random, so this derives a
+  // separate key from it rather than stretching a password.
+  return Buffer.from(hkdfSync("sha256", apiKey, "car-crash-ai", "web cookie signing", 32));
 }
 const devKey = randomBytes(32);
 
