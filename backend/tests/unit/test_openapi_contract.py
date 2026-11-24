@@ -78,3 +78,19 @@ def test_contract_changes_require_a_version_bump(
     base_file.write_text(json.dumps(base), encoding="utf-8")
 
     assert openapi.main(["openapi.py", "check-version", str(base_file)]) == expected
+
+
+def test_check_ignores_how_the_json_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """release-please rewrites openapi.json when it bumps the version, writing
+    1.0 as 1. The same contract written differently is still current."""
+    import json
+
+    rewritten = tmp_path / "openapi.json"
+    text = json.dumps(openapi.generate(), indent=2)
+    rewritten.write_text(text.replace(": 1.0", ": 1").replace(": 0.0", ": 0"))
+    assert rewritten.read_text() != openapi.dump(openapi.generate())
+    monkeypatch.setattr(openapi, "SPEC_PATH", rewritten)
+
+    assert openapi.main(["openapi.py", "check"]) == 0

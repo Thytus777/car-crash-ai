@@ -41,8 +41,10 @@ def main(argv: list[str]) -> int:
         print(f"wrote {SPEC_PATH.name}")
         return 0
     if command == "check":
+        # Compare content, not text: release-please rewrites this file when
+        # it bumps info.version, and its JSON writer turns 1.0 into 1.
         committed = SPEC_PATH.read_text(encoding="utf-8") if SPEC_PATH.exists() else ""
-        if committed != dump(generate()):
+        if not committed or json.loads(committed) != json.loads(dump(generate())):
             print("openapi.json is out of date with the code; run `make openapi`.")
             return 1
         print("openapi.json matches the code.")
