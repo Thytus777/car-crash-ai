@@ -51,10 +51,12 @@ def test_next_client_only_calls_paths_in_the_spec() -> None:
         for d in ("app", "components", "lib")
         for p in (REPO / "frontend-next" / d).rglob("*.ts*")
     ]
+    # String literals only: comments mention the proxy's own file path.
+    literal = re.compile(r"[\"'`](/api/v1/[A-Za-z0-9_/${}.-]*)")
     calls = {
         re.sub(r"\$\{[^}]+\}", "1", m)
         for src in sources
-        for m in re.findall(r"/api/v1/[A-Za-z0-9_/${}.-]*", src.read_text("utf-8"))
+        for m in literal.findall(src.read_text("utf-8"))
     }
     assert calls, "expected the Next.js client to call the API"
     for call in sorted(calls):

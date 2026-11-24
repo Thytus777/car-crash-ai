@@ -411,8 +411,10 @@ TypeScript interfaces: `UploadResponse`, `DamageItem`, `CostEstimate`, `Assessme
 Functions:
 - `uploadImages(files: File[]): Promise<UploadResponse>`
 - `analyzeUpload(uploadId, opts): Promise<AssessmentReport>`
-- `reportPdfUrl(estimateId): string`
-- `listEstimates(): Promise<EstimateSummary[]>`
+- `downloadReport(estimateId): Promise<void>`
+- `listMine(): Promise<AssessmentReport[]>`: the estimates this browser created
+
+The browser calls this app's own `/api/v1` proxy (`app/api/v1/[...path]/route.ts`), which adds the API key on the server. The rules it applies are in `lib/proxy.ts`.
 
 ---
 
