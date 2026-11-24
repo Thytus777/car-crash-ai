@@ -29,6 +29,9 @@ Every deploy:
 3. deploys the new revision and routes 100% of traffic to it
 4. runs `backend/scripts/smoke.py` (health, readyz, auth rejection, an authenticated upload with redaction)
 5. **if the smoke test fails, routes traffic back to the recorded revision automatically**
+6. then does the same for the web app (`<service>-web`, e.g. `car-crash-ai-production-web`): deploys it with `API_URL` pointing at the API it just checked, and smoke-tests the page and the proxy, including that it hides the list of all estimates and other people's estimates. A failure rolls back only the web app.
+
+The web app holds the API key server-side, from the same `<env>-api-keys` secret, and proxies the browser's calls (SECURITY.md). Its link is the environment URL on GitHub and the last line of each deploy's summary.
 
 ## Rollback
 
@@ -42,6 +45,8 @@ gcloud run revisions list --service car-crash-ai-production --region "$REGION" \
   --format='table(metadata.name, spec.containers[0].image, metadata.creationTimestamp)'
 
 gh workflow run release.yml -f environment=production -f digest=sha256:<good digest>
+# Add -f web_digest=sha256:<good web digest> to roll the web app back too;
+# without it the web app stays as it is.
 ```
 
 The run summary of every deploy also prints the digest it deployed.

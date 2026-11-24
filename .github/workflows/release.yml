@@ -3,7 +3,8 @@ name: release
 # Build once, promote the same digest everywhere:
 #
 #   merge to main      -> build, scan, SBOM, attest, push ghcr.io/...:sha-<commit>
-#                         -> deploy that digest to staging (+ smoke test)
+#                         for both images (backend = the API, web = the Next.js app)
+#                         -> deploy those digests to staging (+ smoke tests)
 #   release published  -> find the digest built for the tagged commit, verify its
 #                         provenance, deploy it to production (the `production`
 #                         environment requires a reviewer's approval)
@@ -25,9 +26,14 @@ on:
         options: [staging, production]
         required: true
       digest:
-        description: Image digest to deploy (sha256:..., from a previous run's summary or GHCR)
+        description: Backend image digest to deploy (sha256:..., from a previous run's summary or GHCR)
         type: string
         required: true
+      web_digest:
+        description: Web image digest to deploy (optional; empty leaves the web app as it is)
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -116,9 +122,87 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  build-web:
+    name: build, scan and push (web)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Image name
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/web" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: frontend-next
+          load: true
+          tags: ${{ steps.name.outputs.image }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Image runs as non-root
+        run: test "$(docker run --rm --entrypoint id '${{ steps.name.outputs.image }}:sha-${{ github.sha }}' -u)" = "10001"
+
+      - name: Vulnerability scan (Trivy, fixable HIGH/CRITICAL block the push)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.name.outputs.image }}:sha-${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.name.outputs.image }}:sha-${{ github.sha }}
+          format: spdx-json
+          artifact-name: sbom-web-${{ github.sha }}.spdx.json
+          upload-release-assets: false
+
+      - name: Push the scanned image
+        id: push
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag "$IMAGE:sha-$GITHUB_SHA" "$IMAGE:main"
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:main"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:sha-$GITHUB_SHA" | cut -d@ -f2)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Web image"
+            echo "\`$IMAGE@$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Provenance attestation (SLSA)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
   staging:
     name: staging
-    needs: build
+    needs: [build, build-web]
     if: vars.GCP_PROJECT_ID != ''
     permissions:
       contents: read
@@ -128,6 +212,7 @@ jobs:
     with:
       environment: staging
       digest: ${{ needs.build.outputs.digest }}
+      web_digest: ${{ needs.build-web.outputs.digest }}
 
   resolve:
     name: resolve release digest
@@ -140,29 +225,36 @@ jobs:
       attestations: read
     outputs:
       digest: ${{ steps.find.outputs.digest }}
+      web_digest: ${{ steps.find.outputs.web_digest }}
     steps:
-      - name: Find the image built for the tagged commit
+      - name: Find the images built for the tagged commit
         id: find
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY,,}/backend"
           echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          # release-please publishes the release while main's build may still be
-          # running, so wait for it rather than building a second, different image.
-          for _ in $(seq 1 50); do
-            if digest="$(docker buildx imagetools inspect "$image:sha-$GITHUB_SHA" --format '{{.Manifest.Digest}}' 2>/dev/null)"; then
-              break
-            fi
-            echo "waiting for $image:sha-$GITHUB_SHA ..."
-            sleep 30
-          done
-          test -n "${digest:-}" || { echo "::error::no image for $GITHUB_SHA; did the main build fail?"; exit 1; }
-          # Only promote what our own release workflow built from this repo.
-          gh attestation verify "oci://$image@$digest" --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          # release-please publishes the release while main's builds may still be
+          # running, so wait for them rather than building second, different images.
+          find_digest() {
+            local image="ghcr.io/${GITHUB_REPOSITORY,,}/$1" digest=""
+            for _ in $(seq 1 50); do
+              if digest="$(docker buildx imagetools inspect "$image:sha-$GITHUB_SHA" --format '{{.Manifest.Digest}}' 2>/dev/null)"; then
+                break
+              fi
+              echo "waiting for $image:sha-$GITHUB_SHA ..." >&2
+              sleep 30
+            done
+            test -n "$digest" || { echo "::error::no $1 image for $GITHUB_SHA; did the main build fail?" >&2; return 1; }
+            # Only promote what our own release workflow built from this repo.
+            gh attestation verify "oci://$image@$digest" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" >&2
+            echo "$digest"
+          }
+          backend="$(find_digest backend)"
+          web="$(find_digest web)"
+          echo "digest=$backend" >> "$GITHUB_OUTPUT"
+          echo "web_digest=$web" >> "$GITHUB_OUTPUT"
 
   production:
     name: production
@@ -175,6 +267,7 @@ jobs:
     with:
       environment: production
       digest: ${{ needs.resolve.outputs.digest }}
+      web_digest: ${{ needs.resolve.outputs.web_digest }}
 
   manual:
     name: manual deploy / rollback
@@ -187,3 +280,4 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       digest: ${{ inputs.digest }}
+      web_digest: ${{ inputs.web_digest }}
